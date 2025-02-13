@@ -87,7 +87,7 @@ case "$1" in
     export RUNNING_IN_DOCKER=true
     echo -e "🐳 ${GREEN}Starting FastAPI in Docker mode (Development)...${RESET}"
     fake_loading
-    docker-compose up --no-deps app --build
+    docker-compose up app --build
     ;;
 
   docker-prod)

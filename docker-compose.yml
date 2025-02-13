@@ -12,10 +12,8 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data  # Shared volume name
-      - ./app/db/postgresql/create_db.sql:/docker-entrypoint-initdb.d/create_db.sql
-      - ./app/db/postgresql/seed_data.sql:/docker-entrypoint-initdb.d/seed_data.sql
-      - ./app/db/postgresql/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
-    command: ["/bin/sh", "-c", "/docker-entrypoint-initdb.d/init-db.sh"]
+      - ./app/db/engines/postgresql/2-create_db.sql:/docker-entrypoint-initdb.d/2-create_db.sql
+      - ./app/db/engines/postgresql/3-seed_data.sql:/docker-entrypoint-initdb.d/3-seed_data.sql 
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER}"]
       interval: 10s

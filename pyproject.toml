@@ -6,9 +6,5 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi[standard]>=0.115.8",
-]
-
-[dependency-groups]
-dev = [
-    "fastapi-cli>=0.0.7",
+    "python-dotenv>=1.0.1",
 ]
