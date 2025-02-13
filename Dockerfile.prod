@@ -1,0 +1,50 @@
+# ---- Stage 1: Build dependencies ----
+FROM python:3.12-slim-bookworm AS builder
+
+# Create a non-root user for security
+RUN groupadd --system appgroup && useradd --system --no-create-home --group appgroup appuser
+
+WORKDIR /app
+
+# Install only essential system dependencies for building packages
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential python3-dev libffi-dev git curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install `uv` package manager
+RUN curl -fsSL https://astral.sh/uv/install.sh | sh && \
+    mv $HOME/.local/bin/uv /usr/local/bin/uv
+
+# Copy dependency files first
+COPY pyproject.toml uv.lock ./
+
+# Install Python dependencies using `uv`
+RUN uv pip install --system --requirements pyproject.toml --no-cache-dir
+
+# ---- Stage 2: Production-ready Image ----
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Install only runtime dependencies (minimal packages)
+RUN apt-get update && apt-get install -y --no-install-recommends libffi-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create a non-root user for security
+RUN groupadd --system appgroup && useradd --system --no-create-home --group appgroup appuser
+
+# Copy installed dependencies from builder stage
+COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+# Copy the application source code
+COPY --chown=appuser:appgroup . .
+
+# Switch to non-root user
+USER appuser
+
+# Expose the application port
+EXPOSE 8000
+
+# Production command (no auto-reload)
+CMD ["fastapi", "run", "app/main.py", "--host", "0.0.0.0", "--port", "8000"]

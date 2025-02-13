@@ -1,0 +1,9 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: versa_forge_api_dev
+    volumes:
+      - .:/app  # Live reloading for development
+    command: ["fastapi", "dev", "app/main.py", "--host", "0.0.0.0", "--port", "8000", "--reload"]

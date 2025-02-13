@@ -497,8 +497,16 @@ dependencies = [
     { name = "fastapi", extra = ["standard"] },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "fastapi-cli" },
+]
+
 [package.metadata]
 requires-dist = [{ name = "fastapi", extras = ["standard"], specifier = ">=0.115.8" }]
+
+[package.metadata.requires-dev]
+dev = [{ name = "fastapi-cli", specifier = ">=0.0.7" }]
 
 [[package]]
 name = "watchfiles"

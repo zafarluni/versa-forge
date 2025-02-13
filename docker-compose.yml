@@ -1,0 +1,40 @@
+services:
+  db:
+    image: postgres:17.2-alpine3.21
+    container_name: versa_postgres
+    restart: always
+    env_file: .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data  # Shared volume name
+      - ./app/db/postgresql/create_db.sql:/docker-entrypoint-initdb.d/create_db.sql
+      - ./app/db/postgresql/seed_data.sql:/docker-entrypoint-initdb.d/seed_data.sql
+      - ./app/db/postgresql/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
+    command: ["/bin/sh", "-c", "/docker-entrypoint-initdb.d/init-db.sh"]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER}"]
+      interval: 10s
+      retries: 5
+      timeout: 5s
+
+  app:
+    build:
+      context: .
+    container_name: versa_forge_api_dev
+    restart: always
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      - RUNNING_IN_DOCKER=true
+
+volumes:
+  postgres_data:
