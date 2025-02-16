@@ -1,9 +1,6 @@
 -- Ensure UTF-8 encoding
 SET client_encoding = 'UTF8';
 
--- Connect to the correct database
-\c versa_forge_db;
-
 -- Users Table
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
