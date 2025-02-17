@@ -1,7 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import agents, chat
+from app.api.routes import agents_router, category_router
+
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -9,6 +10,7 @@ app = FastAPI(
     description="VersaForge – A modular platform for building custom GPT agents with multi-LLM support and RAG.",
     version="1.0.0",
 )
+
 
 # Enable CORS (Cross-Origin Resource Sharing)
 app.add_middleware(
@@ -20,7 +22,8 @@ app.add_middleware(
 )
 
 # Include API routes
-app.include_router(agents.router, prefix="/agents", tags=["Agents"])
+app.include_router(agents_router.router, prefix="/agents", tags=["Agents"])
+app.include_router(category_router.router, prefix="/categories", tags=["Categories"])
 
 """
 # app.include_router(files.router, prefix="/files", tags=["File Management"])
@@ -32,8 +35,3 @@ app.include_router(chat.router, prefix="/chat", tags=["Chat"])
 @app.get("/", tags=["Health"])
 def health_check():
     return {"status": "OK", "message": "Versa-Forge API is running"}
-
-
-@app.get("/hello")
-def hello():
-    return {"Hello": "World!"}
