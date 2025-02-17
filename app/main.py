@@ -1,21 +1,30 @@
+import os
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import agents_router, category_router
+from app.core.debugger import start_debugger
+from app.core.config import settings
 
+# Initialize logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Start debugger if enabled
+start_debugger()
 
 # Initialize FastAPI app
 app = FastAPI(
-    title="Versa-Forge API",
-    description="VersaForge – A modular platform for building custom GPT agents with multi-LLM support and RAG.",
-    version="1.0.0",
+    title=settings.PROJECT_NAME,
+    description=settings.DESCRIPTION,
+    version=settings.VERSION,
 )
 
-
-# Enable CORS (Cross-Origin Resource Sharing)
+# Enable CORS - restrict origins in production
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Change this to specific domains in production
+    allow_origins=settings.ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -25,13 +34,9 @@ app.add_middleware(
 app.include_router(agents_router.router, prefix="/agents", tags=["Agents"])
 app.include_router(category_router.router, prefix="/categories", tags=["Categories"])
 
-"""
-# app.include_router(files.router, prefix="/files", tags=["File Management"])
-app.include_router(chat.router, prefix="/chat", tags=["Chat"])
-"""
 
-
-# Health check route
+# Health check endpoint
 @app.get("/", tags=["Health"])
 def health_check():
+    logger.info("Health check endpoint accessed.")
     return {"status": "OK", "message": "Versa-Forge API is running"}

@@ -1,9 +1,18 @@
 services:
   app:
+    container_name: versa_forge_api_dev
     build:
       context: .
       dockerfile: Dockerfile.dev
-    container_name: versa_forge_api_dev
+    env_file:
+      - .env
+    environment:
+      - DEBUG=${DEBUG}
+      - DEBUG_PORT=${DEBUG_PORT}
+      - RUN_MAIN=${RUN_MAIN}
+    ports:
+      - "8000:8000"   # FastAPI application
+      - "5678:5678"
     volumes:
-      - .:/app  # Live reloading for development
-    command: ["fastapi", "dev", "app/main.py", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+      - .:/app
+

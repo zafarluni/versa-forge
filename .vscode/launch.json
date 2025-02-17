@@ -1,7 +1,4 @@
 {
-    // Use IntelliSense to learn about possible attributes.
-    // Hover to view descriptions of existing attributes.
-    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
         {
@@ -9,15 +6,17 @@
             "type": "debugpy",
             "request": "attach",
             "connect": {
-                "host": "17l2.31.58.235",
+                "host": "172.31.58.235", // Corrected IP format
                 "port": 5678
             },
             "pathMappings": [
                 {
                     "localRoot": "${workspaceFolder}",
-                    "remoteRoot": "."
+                    "remoteRoot": "/app" // Adjust if your code runs in a Docker container
                 }
-            ]
+            ],
+            "justMyCode": false, // Allow debugging external libraries if needed
+            "redirectOutput": true // Ensures logs show in the debug console
         }
     ]
 }

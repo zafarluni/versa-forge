@@ -1,18 +1,46 @@
-import os
-from dotenv import load_dotenv
-
-# Load environment variables from .env file
-load_dotenv()
+from pydantic_settings import BaseSettings
 
 
-# Detect if running inside a Docker container
-RUNNING_IN_DOCKER = os.getenv("RUNNING_IN_DOCKER", "false").lower() == "true"
+class Settings(BaseSettings):
+    # Project Information (Static & Non-Sensitive)
+    PROJECT_NAME: str = "Versa-Forge API"
+    DESCRIPTION: str = (
+        "VersaForge – A modular platform for building custom GPT agents with multi-LLM support and RAG."
+    )
+    VERSION: str = "1.0.0"
 
-# Set the database host
-DATABASE_HOST = "db" if RUNNING_IN_DOCKER else "localhost"
-DATABASE_USER = os.getenv("POSTGRES_USER", "versa_forge_user")
-DATABASE_PASSWORD = os.getenv("POSTGRES_PASSWORD", "strongpassword")
-DATABASE_NAME = os.getenv("POSTGRES_DB", "versa_forge_db")
-DATABASE_PORT = os.getenv("DATABASE_PORT", "5432")
+    # Debugging Settings
+    RUN_MAIN: bool = False
+    DEBUG_MODE: bool = False
+    DEBUG_PORT: int = 5678
 
-DATABASE_URL = f"postgresql://{DATABASE_USER}:{DATABASE_PASSWORD}@{DATABASE_HOST}:{DATABASE_PORT}/{DATABASE_NAME}"
+    # CORS Settings (Non-Sensitive)
+    ALLOWED_ORIGINS: list[str] = ["http://localhost", "https://yourdomain.com"]
+
+    # Database Settings (Sensitive - Must be set via `.env`)
+    DATABASE_HOST: str
+    POSTGRES_USER: str
+    POSTGRES_PASSWORD: str
+    POSTGRES_DB: str
+    DATABASE_PORT: str
+
+    # Docker Environment Indicator (Optional)
+    RUNNING_IN_DOCKER: bool = False
+
+    @property
+    def DATABASE_URL(self) -> str:
+        """Constructs the database connection URL dynamically."""
+        return (
+            f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@"
+            f"{self.DATABASE_HOST}:{self.DATABASE_PORT}/{self.POSTGRES_DB}"
+        )
+
+    class Config:
+        env_file = ".env"
+        extra = (
+            "ignore"  # Prevents unexpected environment variables from causing errors
+        )
+
+
+# Instantiate settings from environment variables
+settings = Settings()

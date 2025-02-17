@@ -1,13 +1,13 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
-from app.core import config
+from app.core.config import settings
 
 # 1️⃣ Define the SQLAlchemy Base
 Base = declarative_base()
 
 # 2️⃣ Create the Database Engine
 # Database URL format: postgresql://user:password@host:port/database
-DATABASE_URL = config.DATABASE_URL
+DATABASE_URL = settings.DATABASE_URL
 
 # 3️⃣ Create a Thread-Safe Session Factory
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)

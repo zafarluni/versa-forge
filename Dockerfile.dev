@@ -22,7 +22,12 @@ RUN uv --version
 COPY pyproject.toml uv.lock ./
 
 # Install Python dependencies using `uv`
+# RUN uv pip install --system --requirements pyproject.toml --no-cache-dir
 RUN uv pip install --system --requirements pyproject.toml --no-cache-dir
+RUN uv pip install --system debugpy --no-cache-dir
+
+
+# RUN uv sync --all-groups
 
 # ---- Stage 2: Final image ----
 FROM python:3.12-slim
@@ -49,5 +54,15 @@ USER appuser
 # Expose the application port
 EXPOSE 8000
 
+# Debugger-related environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONWARNINGS="ignore"
+ENV PYDEVD_DISABLE_FILE_VALIDATION=1
+
+
 # Default command for running FastAPI (supports development mode)
-CMD ["fastapi", "dev", "app/main.py", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+# CMD ["fastapi", "dev", "app/main.py", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+# Start the application with uvicorn
+# CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-exclude", "*.log", "--reload-exclude", "*.swp","--reload-exclude", "*.tmp", "--reload-exclude", ".env"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
