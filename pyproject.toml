@@ -1,18 +1,55 @@
 [project]
 name = "versa-forge"
 version = "0.1.0"
-description = "Add your description here"
+description = "Custom GPT platform with RAG support and optimized prompts"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    # Core web framework
     "fastapi[standard]>=0.115.8",
+    
+    # HTTP client for API calls
+    "httpx>=0.28.1",
+    
+    # PostgreSQL database driver
     "psycopg2-binary>=2.9.10",
+    
+    # Environment variable management
     "pydantic-settings>=2.7.1",
+    
+    # Environment file handling
     "python-dotenv>=1.0.1",
-    "sqlalchemy>=2.0.38",
+    
+    # ORM for database interactions
+    "sqlalchemy>=2.0.38"
 ]
 
 [dependency-groups]
 dev = [
+    # Debugging
     "debugpy>=1.8.12",
+    
+    # Testing framework
+    "pytest>=8.3.4",
+    
+    # Testcontainers for database testing
+    "testcontainers[postgresql]>=4.9.1",
+    
+    # HTTP testing for FastAPI
+    "httpx>=0.28.1",
+    
+    # Mocking for tests
+    "pytest-mock>=3.14.0",
+    
+    # Coverage reporting
+    "pytest-cov>=5.0.0"
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-v --disable-warnings"
+markers = [
+    "integration: marks tests as integration tests",
+    "e2e: marks tests as end-to-end tests"
 ]

@@ -2,6 +2,8 @@
 # Category Service (service/categories_service.py)
 # ========================
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
+from fastapi import HTTPException
 from app.db.models.database_models import Category
 from app.db.schemas.category_schemas import CategoryCreate
 from fastapi import HTTPException
@@ -9,15 +11,18 @@ from typing import List
 
 
 class CategoryService:
+    
     @staticmethod
     def create_category(db: Session, category_data: CategoryCreate):
-        category = Category(
-            name=category_data.name, description=category_data.description
-        )
-        db.add(category)
-        db.commit()
-        db.refresh(category)
-        return category
+        new_category = Category(name=category_data.name, description=category_data.description)
+        db.add(new_category)
+        try:
+            db.commit()
+            db.refresh(new_category)
+            return new_category
+        except IntegrityError:
+            db.rollback()
+        raise HTTPException(status_code=400, detail=f"Category with ${category_data.name} name already exists.")
 
     @staticmethod
     def get_all_categories(db: Session) -> List[Category]:

@@ -31,8 +31,8 @@ app.add_middleware(
 )
 
 # Include API routes
-app.include_router(agents_router.router, prefix="/agents", tags=["Agents"])
-app.include_router(category_router.router, prefix="/categories", tags=["Categories"])
+app.include_router(agents_router.router)
+app.include_router(category_router.router)
 
 
 # Health check endpoint

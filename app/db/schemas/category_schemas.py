@@ -1,19 +1,24 @@
+# schemas/category_schemas.py
+
 from pydantic import BaseModel
 from datetime import datetime
+from typing import Optional
 
-
-# Base Category Schema
+# Shared properties
 class CategoryBase(BaseModel):
     name: str
-    description: str
+    description: Optional[str] = None
 
-
-# Create Category
+# Properties to receive via API on creation
 class CategoryCreate(CategoryBase):
     pass
 
+# Properties to receive via API on update
+class CategoryUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
 
-# Response Schema
+# Properties to return via API
 class CategoryResponse(CategoryBase):
     id: int
     created_at: datetime

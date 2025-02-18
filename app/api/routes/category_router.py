@@ -1,7 +1,7 @@
 # ========================
 # Category Router (api/routes/category_router.py)
 # ========================
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 from typing import List
 from app.db.database import get_db
@@ -10,8 +10,7 @@ from app.services.categories_service import CategoryService
 
 router = APIRouter(prefix="/categories", tags=["Categories"])
 
-
-@router.post("/", response_model=CategoryResponse)
+@router.post("/", response_model=CategoryResponse, status_code=status.HTTP_201_CREATED)
 def create_category(category_data: CategoryCreate, db: Session = Depends(get_db)):
     return CategoryService.create_category(db, category_data)
 
@@ -26,6 +25,6 @@ def get_category(category_id: int, db: Session = Depends(get_db)):
     return CategoryService.get_category_by_id(db, category_id)
 
 
-@router.delete("/{category_id}")
+@router.delete("/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_category(category_id: int, db: Session = Depends(get_db)):
     return CategoryService.delete_category(db, category_id)
