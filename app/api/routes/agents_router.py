@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
-from sqlalchemy.orm import Session
 from typing import List
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, status
+from sqlalchemy.orm import Session
+
 
 from app.db.models.database_models import User
 from app.db.schemas.agent_schemas import AgentCreate, AgentResponse
@@ -12,7 +13,7 @@ router = APIRouter(prefix="/agents", tags=["Agents"])
 
 
 # Create a New Agent
-@router.post("/", response_model=AgentResponse)
+@router.post("/", response_model=AgentResponse, status_code=status.HTTP_201_CREATED)
 def create_agent(
     agent_data: AgentCreate,
     db: Session = Depends(get_db),
@@ -109,7 +110,8 @@ def upload_file(
 # Get Agent Files
 @router.get("/{agent_id}/files")
 def get_agent_files(
-    agent_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+    agent_id: int, db: Session = Depends(get_db), 
+    user: User = Depends(get_current_user)
 ):
     files = AgentService.get_agent_files(db, agent_id)
     return files
