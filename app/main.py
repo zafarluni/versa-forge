@@ -1,3 +1,4 @@
+from typing import Dict
 import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -36,6 +37,6 @@ app.include_router(category_router.router)
 
 # Health check endpoint
 @app.get("/", tags=["Health"])
-def health_check():
+def health_check() -> Dict[str, str]:
     logger.info("Health check endpoint accessed.")
     return {"status": "OK", "message": "Versa-Forge API is running"}

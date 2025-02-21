@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     RUNNING_IN_DOCKER: bool = False
 
     @property
-    def DATABASE_URL(self) -> str:
+    def DATABASE_URL(self) -> str:  # pylint: disable=C0103:invalid-name
         """Constructs the database connection URL dynamically."""
         return (
             f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@"
@@ -43,4 +43,4 @@ class Settings(BaseSettings):
 
 
 # Instantiate settings from environment variables
-settings = Settings()
+settings = Settings() # type: ignore

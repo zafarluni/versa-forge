@@ -1,11 +1,12 @@
 # schemas/user_schemas.py
 
-from pydantic import BaseModel, EmailStr
-from datetime import datetime
 from typing import Optional
+from datetime import datetime
+from pydantic import BaseModel, EmailStr
 
 # Shared properties
 class UserBase(BaseModel):
+    id: int
     username: str
     email: EmailStr
 

@@ -1,55 +1,101 @@
+# Project metadata
 [project]
 name = "versa-forge"
 version = "0.1.0"
 description = "Custom GPT platform with RAG support and optimized prompts"
 readme = "README.md"
 requires-python = ">=3.12"
+
+# Project dependencies
 dependencies = [
     # Core web framework
     "fastapi[standard]>=0.115.8",
-    
     # HTTP client for API calls
     "httpx>=0.28.1",
-    
     # PostgreSQL database driver
     "psycopg2-binary>=2.9.10",
-    
     # Environment variable management
     "pydantic-settings>=2.7.1",
-    
     # Environment file handling
     "python-dotenv>=1.0.1",
-    
     # ORM for database interactions
-    "sqlalchemy>=2.0.38"
+    "sqlalchemy>=2.0.38",
 ]
 
+# Development dependencies grouped under "dev"
 [dependency-groups]
 dev = [
-    # Debugging
+    # Debugging tools
     "debugpy>=1.8.12",
-    
     # Testing framework
     "pytest>=8.3.4",
-    
     # Testcontainers for database testing
-    "testcontainers[postgresql]>=4.9.1",
-    
+    "testcontainers>=4.9.1",
     # HTTP testing for FastAPI
     "httpx>=0.28.1",
-    
-    # Mocking for tests
+    # Mocking support for tests
     "pytest-mock>=3.14.0",
-    
-    # Coverage reporting
-    "pytest-cov>=5.0.0"
+    # Test coverage reporting
+    "pytest-cov>=5.0.0",
+    # Static type checker
+    "mypy>=1.15.0",
+    # Linter for Python code quality
+    "pylint>=3.3.4",
+    # Security analysis tool
+    "bandit>=1.8.3",
+    # Pre-commit hooks manager
+    "pre-commit>=4.1.0",
 ]
 
+# Mypy configuration for strict type checking
+[tool.mypy]
+strict = true                # Enables all strict checks
+disallow_untyped_defs = true # Forces all functions to have type hints
+warn_unused_ignores = true
+warn_return_any = true
+warn_unused_configs = true
+
+# Pylint configuration
+[tool.pylint.main]
+fail-under = 9.0 # Minimum acceptable score before failing (0-10)
+jobs = 0 # Use all available CPU cores for linting
+disable = [
+    "C0114", # Missing module docstring
+    "C0115", # Missing class docstring
+    "C0116", # Missing function docstring
+]
+
+[tool.pylint.format]
+max-line-length = 120 # Set the maximum line length
+
+[tool.pylint.design]
+max-args = 5 # Limit the number of function arguments to 5
+
+[tool.pylint.messages_control]
+disable = [
+    "missing-docstring",      # Ignore missing docstring warnings
+    "too-few-public-methods", # Allow small classes with few public methods
+    "unnecessary-pass",       # Allow unnecessary pass statements
+]
+
+# Bandit security tool configuration
+[tool.bandit]
+exclude_dirs = ["tests", "migrations"] # Exclude test and migration directories
+skips = [
+    "B101", # Ignore assert usage warning
+    "B110", # Ignore try-except-pass warnings
+]
+
+# Pre-commit configuration placeholder
+[tool.pre-commit]
+# Pre-commit hooks need to be configured later
+
+# Pytest configuration
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
-addopts = "-v --disable-warnings"
+addopts = "-v --disable-warnings" # Enable verbose output and disable warnings
 markers = [
     "integration: marks tests as integration tests",
-    "e2e: marks tests as end-to-end tests"
+    "e2e: marks tests as end-to-end tests",
 ]

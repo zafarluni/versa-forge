@@ -1,3 +1,4 @@
+from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -7,7 +8,7 @@ from app.db.database import Base, get_db
 from app.main import app
 
 @pytest.fixture(scope="module")
-def test_db():
+def test_db() -> Any:
     """Set up and tear down a test database using a temporary PostgreSQL container."""
     with PostgresContainer("postgres:17.2-alpine3.21") as postgres:
         engine = create_engine(postgres.get_connection_url())
@@ -17,9 +18,9 @@ def test_db():
         Base.metadata.drop_all(bind=engine)
 
 @pytest.fixture(scope="module")
-def client(test_db):
+def client(test_db: Any) -> Any:
     """Override the database dependency in FastAPI and return a test client."""
-    def override_get_db():
+    def override_get_db() -> Any:
         db = test_db()
         try:
             yield db
