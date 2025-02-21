@@ -1,6 +1,6 @@
 import logging
 import debugpy
-from app.core.config import settings
+from app.utils.config import settings
 
 logger = logging.getLogger(__name__)
 

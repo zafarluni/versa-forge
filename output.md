@@ -13,20 +13,27 @@
 │   ├── dependencies.py
 │   ├── __init__.py
 │   └── routes
-│       ├── files_router.py
 │       ├── category_router.py
 │       ├── agents_router.py
 │       ├── __init__.py
-│       └── chat_router.py
+│       ├── chat_router.py
+│       └── agent_files_router.py
 ├── app
 │   └── api
 │       └── routes
 │           └── category_router.py
 ├── llm
+│   ├── llm_manager.py
 │   ├── vector_store.py
 │   ├── llm_config.py
 │   ├── __init__.py
-│   └── llm.py
+│   ├── llm.py
+│   └── providers
+│       ├── deepseek.py
+│       ├── groq.py
+│       ├── vllm.py
+│       ├── llama.py
+│       └── openai.py
 ├── utils
 │   └── __init__.py
 ├── db
@@ -51,8 +58,9 @@
 │   ├── __init__.py
 │   └── config.py
 └── services
-    ├── file_service.py
     ├── chat_service.py
+    ├── vector_store_service.py
+    ├── agent_file_service.py
     ├── agent_service.py
     ├── categories_service.py
     └── __init__.py
@@ -63,6 +71,7 @@
 ## ./main.py
 
 ```python
+from typing import Dict
 import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -101,7 +110,7 @@ app.include_router(category_router.router)
 
 # Health check endpoint
 @app.get("/", tags=["Health"])
-def health_check():
+def health_check() -> Dict[str, str]:
     logger.info("Health check endpoint accessed.")
     return {"status": "OK", "message": "Versa-Forge API is running"}
 
@@ -146,6 +155,10 @@ def health_check():
 ## ./api/dependencies.py
 
 ```python
+from app.db.database import get_db
+from app.core.auth import get_current_user
+
+__all__ = ["get_db", "get_current_user"]
 
 ```
 
@@ -157,19 +170,12 @@ def health_check():
 ```
 
 
-## ./api/routes/files_router.py
-
-```python
-
-```
-
-
 ## ./api/routes/category_router.py
 
 ```python
 from typing import List
-from fastapi import HTTPException
-from fastapi import APIRouter, Depends, Query, Response, status
+
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.db.schemas.category_schemas import CategoryCreate, CategoryResponse
@@ -177,26 +183,28 @@ from app.services.categories_service import CategoryService
 
 router = APIRouter(prefix="/categories", tags=["Categories"])
 
+
 @router.post("/", response_model=CategoryResponse, status_code=status.HTTP_201_CREATED)
-def create_category(category_data: CategoryCreate, db: Session = Depends(get_db)) -> CategoryResponse:
+def create_category(category_data: CategoryCreate, db: Session=Depends(get_db)) -> CategoryResponse:
     return CategoryService.create_category(db, category_data)
 
+
 @router.get("/", response_model=List[CategoryResponse])
-def get_all_categories(db: Session = Depends(get_db)) -> List[CategoryResponse]:
+def get_all_categories(db: Session=Depends(get_db)) -> List[CategoryResponse]:
     return CategoryService.get_all_categories(db)
 
+
 @router.get("/{category_id}", response_model=CategoryResponse)
-def get_category(category_id: int, db: Session = Depends(get_db)) -> CategoryResponse:
+def get_category(category_id: int, db: Session=Depends(get_db)) -> CategoryResponse:
     return CategoryService.get_category_by_id(db, category_id)
 
+
 @router.delete("/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_category(category_id: int, db: Session = Depends(get_db), strict: bool = Query(False)) -> Response:
+def delete_category(category_id: int, db: Session=Depends(get_db), strict: bool = False) -> Response:
     deleted = CategoryService.delete_category(db, category_id)
-    if strict:
-        if deleted:
-            return Response(status_code=204)
-        raise HTTPException(status_code=404, detail="Category not found")  
-    return Response(status_code=204)
+    if strict and not deleted:
+        raise HTTPException(status_code=404, detail="Category not found")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 ```
 
@@ -206,13 +214,15 @@ def delete_category(category_id: int, db: Session = Depends(get_db), strict: boo
 ```python
 from pathlib import Path
 from typing import List, Optional
+
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
-from sqlalchemy.orm import Session
-from app.db.schemas.user_schemas import UserBase as User
-from app.db.schemas.agent_schemas import AgentCreate, AgentUpdate, AgentResponse
+
 from app.db.database import get_db
+from app.db.schemas.agent_schemas import AgentCreate, AgentUpdate, AgentResponse
+from app.db.schemas.agent_file_schema import AgentFileResponse
 from app.services.agent_service import AgentService
 from app.core.auth import get_current_user
+from app.db.schemas.user_schemas import UserBase as User
 
 router = APIRouter(prefix="/agents", tags=["Agents"])
 
@@ -220,123 +230,103 @@ UPLOAD_DIR = Path("./uploads")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
-# Create a New Agent
 @router.post("/", response_model=AgentResponse)
 def create_agent(
     agent_data: AgentCreate,
-    db: Session = Depends(get_db),
+    db=Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> AgentResponse:
     if agent_data.is_public and not agent_data.categories:
         raise HTTPException(status_code=400, detail="Public agents must have categories")
-
-    new_agent = AgentService.create_agent(db, agent_data, user.id)
-
+    new_agent = AgentService.create_agent(db, agent_data, owner_id=user.id)
     if agent_data.is_public and agent_data.categories:
         AgentService.assign_categories(db, new_agent.id, agent_data.categories)
-
     return new_agent
 
 
-# Get Public Agents
 @router.get("/public", response_model=List[AgentResponse])
 def get_public_agents(
     category_id: Optional[int] = Query(None),
     limit: int = Query(10, ge=1),
     offset: int = Query(0, ge=0),
-    db: Session = Depends(get_db),
+    db=Depends(get_db),
 ) -> List[AgentResponse]:
     return AgentService.get_public_agents(db, category_id, limit, offset)
 
 
-# Get Private Agents
 @router.get("/private", response_model=List[AgentResponse])
 def get_private_agents(
-    db: Session = Depends(get_db), user: User = Depends(get_current_user)
+    db=Depends(get_db), user: User = Depends(get_current_user)
 ) -> List[AgentResponse]:
-    return AgentService.get_private_agents(db, user.id)
+    return AgentService.get_private_agents(db, owner_id=user.id)
 
 
-# Update Agent
 @router.put("/{agent_id}", response_model=AgentResponse)
 def update_agent(
     agent_id: int,
     agent_data: AgentUpdate,
-    db: Session = Depends(get_db),
+    db=Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> AgentResponse:
-    agent = AgentService.update_agent(db, agent_id, agent_data, user.id)
+    agent = AgentService.update_agent(db, agent_id, agent_data, owner_id=user.id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found or unauthorized")
-
     if agent.is_public and agent_data.categories:
         AgentService.delete_agent_categories(db, agent.id)
         AgentService.assign_categories(db, agent.id, agent_data.categories)
-
     return agent
 
 
-# Delete Agent
 @router.delete("/{agent_id}")
 def delete_agent(
-    agent_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+    agent_id: int, db=Depends(get_db), user: User = Depends(get_current_user)
 ) -> dict:
-    deleted = AgentService.delete_agent(db, agent_id, user.id)
+    deleted = AgentService.delete_agent(db, agent_id, owner_id=user.id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Agent not found or unauthorized")
     return {"message": "Agent deleted successfully"}
 
 
-# Upload RAG Files
-@router.post("/{agent_id}/upload")
+@router.post("/{agent_id}/upload", response_model=dict)
 def upload_file(
     agent_id: int,
     file: UploadFile = File(...),
-    db: Session = Depends(get_db),
+    db=Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
-    # Ensure user owns the agent before uploading a file
-    agent = AgentService.get_agent_by_id_and_owner(db, agent_id, user.id)
+    # Check ownership before uploading
+    agent = AgentService.get_agent_by_id_and_owner(db, agent_id, owner_id=user.id)
     if not agent:
-        raise HTTPException(status_code=403, detail="You are not allowed to upload files to this agent.")
-
-    # Validate file type
+        raise HTTPException(status_code=403, detail="Not allowed to upload files to this agent.")
     allowed_types = {
         "application/pdf",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     }
     if file.content_type not in allowed_types:
         raise HTTPException(status_code=400, detail="Invalid file type")
-
-    # Save file securely
     safe_filename = f"{agent_id}_{file.filename.replace('/', '_')}"
     file_path = UPLOAD_DIR / safe_filename
-
     try:
         with file_path.open("wb") as f:
             f.write(file.file.read())
     except OSError as e:
         raise HTTPException(status_code=500, detail="File upload failed") from e
-
-    # Save file metadata to DB
     doc = AgentService.upload_document(db, agent_id, file.filename, file.content_type)
     if not doc:
         raise HTTPException(status_code=500, detail="Failed to save file metadata")
-
     return {"message": "File uploaded successfully", "file_id": doc.id}
 
 
-# Get Agent Files
-@router.get("/{agent_id}/files")
+@router.get("/{agent_id}/files", response_model=List[AgentFileResponse])
 def get_agent_files(
-    agent_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)
-) -> List[AgentFile]:
-    # Ensure user owns the agent before accessing files
-    agent = AgentService.get_agent_by_id_and_owner(db, agent_id, user.id)
+    agent_id: int, db=Depends(get_db), user: User = Depends(get_current_user)
+) -> List[AgentFileResponse]:
+    agent = AgentService.get_agent_by_id_and_owner(db, agent_id, owner_id=user.id)
     if not agent:
-        raise HTTPException(status_code=403, detail="You are not allowed to access these files.")
-
-    return AgentService.get_agent_files(db, agent_id)
+        raise HTTPException(status_code=403, detail="Not allowed to access these files.")
+    files = AgentService.get_agent_files(db, agent_id)
+    # Assuming AgentFileResponse.model_validate is available
+    return [AgentFileResponse.model_validate(file) for file in files]
 
 ```
 
@@ -351,6 +341,71 @@ def get_agent_files(
 ## ./api/routes/chat_router.py
 
 ```python
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from app.services.chat_service import ChatService
+from app.api.dependencies import get_current_user
+from app.db.schemas.user_schemas import UserBase as User
+
+router = APIRouter(prefix="/chat", tags=["Chat"])
+
+
+class ChatRequest(BaseModel):
+    agent_id: int
+    message: str
+
+
+class ChatResponse(BaseModel):
+    response: str
+
+
+@router.post("/", response_model=ChatResponse)
+def chat_endpoint(request: ChatRequest, user: User = Depends(get_current_user)):
+    result = ChatService.process_chat(request.agent_id, request.message, user.id)
+    if not result:
+        raise HTTPException(status_code=500, detail="Chat processing failed")
+    return ChatResponse(response=result)
+
+```
+
+
+## ./api/routes/agent_files_router.py
+
+```python
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
+from typing import List, Optional
+from app.db.database import get_db
+from app.db.schemas.agent_file_schema import AgentFileResponse
+from app.services.agent_file_service import AgentFileService
+from app.api.dependencies import get_current_user
+from app.db.schemas.user_schemas import UserBase as User
+
+router = APIRouter(prefix="/files", tags=["Files"])
+
+
+@router.post("/upload", response_model=dict)
+def upload_file(
+    agent_id: int,
+    file: UploadFile = File(...),
+    db=Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    result = AgentFileService.save_file(db, agent_id, file, user.id)
+    if not result:
+        raise HTTPException(status_code=500, detail="File upload failed")
+    return result
+
+
+@router.get("/", response_model=List[AgentFileResponse])
+def list_files(
+    agent_id: int,
+    db=Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> List[AgentFileResponse]:
+    files = AgentFileService.get_files(db, agent_id, user.id)
+    if files is None:
+        raise HTTPException(status_code=404, detail="No files found")
+    return files
 
 ```
 
@@ -362,9 +417,56 @@ def get_agent_files(
 ```
 
 
+## ./llm/llm_manager.py
+
+```python
+from typing import Dict, Any
+from app.llm.providers.openai import OpenAIProvider
+from app.llm.providers.llama import LlamaProvider
+from app.llm.providers.vllm import VLLMProvider
+from app.llm.providers.deepseek import DeepSeekProvider
+from app.llm.providers.groq import GroqProvider
+from app.core.llm_provider import BaseLLMProvider
+
+class LLMManager:
+    providers: Dict[str, BaseLLMProvider] = {
+        "openai": OpenAIProvider(),
+        "llama": LlamaProvider(),
+        "vllm": VLLMProvider(),
+        "deepseek": DeepSeekProvider(),
+        "groq": GroqProvider(),
+    }
+
+    @classmethod
+    def get_provider(cls, provider_name: str) -> BaseLLMProvider:
+        provider = cls.providers.get(provider_name.lower())
+        if not provider:
+            raise ValueError(f"LLM provider '{provider_name}' is not supported.")
+        return provider
+
+    @classmethod
+    def configure_provider(cls, provider_name: str, config: Dict[str, Any]) -> None:
+        provider = cls.get_provider(provider_name)
+        provider.configure(config)
+
+```
+
+
 ## ./llm/vector_store.py
 
 ```python
+# This file provides abstractions for interacting with vector stores.
+
+from app.services.vector_store_service import BaseVectorStore, DummyVectorStore
+
+# For now, we can instantiate a dummy vector store.
+vector_store = DummyVectorStore()
+
+def add_document_to_store(document: dict) -> None:
+    vector_store.add_document(document)
+
+def query_vector_store(query: str, top_k: int = 5):
+    return vector_store.query(query, top_k)
 
 ```
 
@@ -386,6 +488,106 @@ def get_agent_files(
 ## ./llm/llm.py
 
 ```python
+
+```
+
+
+## ./llm/providers/deepseek.py
+
+```python
+from app.core.llm_provider import BaseLLMProvider
+from typing import Any, Dict
+
+class DeepSeekProvider(BaseLLMProvider):
+    def __init__(self):
+        self.config = {}
+
+    def configure(self, config: Dict[str, Any]) -> None:
+        self.config = config
+
+    def generate(self, prompt: str, **kwargs) -> str:
+        # Placeholder for DeepSeek generation
+        return f"[DeepSeek] Response to: {prompt}"
+
+```
+
+
+## ./llm/providers/groq.py
+
+```python
+from app.core.llm_provider import BaseLLMProvider
+from typing import Any, Dict
+
+class DeepSeekProvider(BaseLLMProvider):
+    def __init__(self):
+        self.config = {}
+
+    def configure(self, config: Dict[str, Any]) -> None:
+        self.config = config
+
+    def generate(self, prompt: str, **kwargs) -> str:
+        # Placeholder for DeepSeek generation
+        return f"[DeepSeek] Response to: {prompt}"
+
+```
+
+
+## ./llm/providers/vllm.py
+
+```python
+from app.core.llm_provider import BaseLLMProvider
+from typing import Any, Dict
+
+class VLLMProvider(BaseLLMProvider):
+    def __init__(self):
+        self.config = {}
+
+    def configure(self, config: Dict[str, Any]) -> None:
+        self.config = config
+
+    def generate(self, prompt: str, **kwargs) -> str:
+        # Placeholder for vLLM generation
+        return f"[vLLM] Response to: {prompt}"
+
+```
+
+
+## ./llm/providers/llama.py
+
+```python
+from app.core.llm_provider import BaseLLMProvider
+from typing import Any, Dict
+
+class LlamaProvider(BaseLLMProvider):
+    def __init__(self):
+        self.config = {}
+
+    def configure(self, config: Dict[str, Any]) -> None:
+        self.config = config
+
+    def generate(self, prompt: str, **kwargs) -> str:
+        # Placeholder for Llama generation
+        return f"[Llama] Response to: {prompt}"
+
+```
+
+
+## ./llm/providers/openai.py
+
+```python
+from app.core.llm_provider import BaseLLMProvider
+from typing import Any, Dict
+
+class OpenAIProvider(BaseLLMProvider):
+    def __init__(self):
+        self.config = {}
+
+    def configure(self, config: Dict[str, Any]) -> None:
+        self.config = config
+
+    def generate(self, prompt: str, **kwargs) -> str:
+        # Placeholder: Implement actual OpenAI API call
+        return f"[OpenAI] Response to: {prompt}"
 
 ```
 
@@ -539,22 +741,19 @@ class UserResponse(UserBase):
 ```python
 # schemas/agent_schemas.py
 
-from pydantic import BaseModel
-from datetime import datetime
 from typing import List, Optional
+from datetime import datetime
+from pydantic import BaseModel
 
-# Shared properties
 class AgentBase(BaseModel):
     name: str
     description: Optional[str] = None
     prompt: str
     is_public: bool
 
-# Properties to receive via API on creation
 class AgentCreate(AgentBase):
     categories: Optional[List[int]] = []
 
-# Properties to receive via API on update
 class AgentUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
@@ -562,7 +761,6 @@ class AgentUpdate(BaseModel):
     is_public: Optional[bool] = None
     categories: Optional[List[int]] = None
 
-# Properties to return via API
 class AgentResponse(AgentBase):
     id: int
     owner_id: int
@@ -738,9 +936,9 @@ class Agent(Base):
     name = Column(String(100), nullable=False, unique=True)
     description = Column(Text, nullable=True)
     prompt = Column(Text, nullable=False)
-    is_public = Column(Boolean, server_default=text("false"), nullable=False)  # ✅ Fix: Used `text("false")`
+    is_public = Column(Boolean, server_default=text("false"), nullable=False)  
     owner_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    created_at = Column(DateTime, server_default=func.now(), nullable=False)  # ✅ Fix
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
 
     # Relationships
     owner = relationship("User", back_populates="agents")
@@ -810,16 +1008,12 @@ class AgentFile(Base):
 ## ./core/auth.py
 
 ```python
-# app/auth/mock_auth.py
 from app.db.schemas.user_schemas import UserBase as User
 
-
 def get_current_user() -> User:
-    """Returns a mock user for testing."""
-    return User(
-        username="admin",
-        email="admin@example.com"
-    )
+    # Placeholder for real authentication logic.
+    # Replace with JWT or OAuth2 as needed.
+    return User(id=1, username="admin", email="admin@example.com")
 
 ```
 
@@ -827,6 +1021,15 @@ def get_current_user() -> User:
 ## ./core/security.py
 
 ```python
+# from passlib.context import CryptContext
+
+# pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# def verify_password(plain_password: str, hashed_password: str) -> bool:
+#     return pwd_context.verify(plain_password, hashed_password)
+
+# def get_password_hash(password: str) -> str:
+#     return pwd_context.hash(password)
 
 ```
 
@@ -840,16 +1043,14 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-
 def start_debugger() -> None:
-    """Start the debugger if RUN_MAIN is set."""
-    if settings.RUN_MAIN == True:
-        debug_port = settings.DEBUG_PORT
+    if settings.RUN_MAIN:
         try:
-            debugpy.listen(("0.0.0.0", debug_port))
-            logger.info("🔍 Debugger is listening on port: %s", debug_port)
-        except Exception as e: # pylint: disable=broad-exception-caught
-            logger.error("⚠️ Failed to start debugger: %s", e)
+            debugpy.listen(("0.0.0.0", settings.DEBUG_PORT))
+            logger.info("Debugger is listening on port %s", settings.DEBUG_PORT)
+        except Exception as e: # pylint: disable=PylintW0718:broad-exception-caught
+            logger.error("Failed to start debugger: %s", e)
+
 ```
 
 
@@ -893,7 +1094,7 @@ class Settings(BaseSettings):
     RUNNING_IN_DOCKER: bool = False
 
     @property
-    def DATABASE_URL(self) -> str:
+    def DATABASE_URL(self) -> str:  # pylint: disable=C0103:invalid-name
         """Constructs the database connection URL dynamically."""
         return (
             f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@"
@@ -908,14 +1109,7 @@ class Settings(BaseSettings):
 
 
 # Instantiate settings from environment variables
-settings = Settings()
-
-```
-
-
-## ./services/file_service.py
-
-```python
+settings = Settings() # type: ignore
 
 ```
 
@@ -923,6 +1117,95 @@ settings = Settings()
 ## ./services/chat_service.py
 
 ```python
+# from app.llm.llm_manager import LLMManager
+
+# class ChatService:
+#     @staticmethod
+#     def process_chat(agent_id: int, message: str, user_id: int) -> str:
+#         # For demonstration, retrieve provider configuration based on agent_id (placeholder logic)
+#         provider_config = {"provider": "openai"}  # This should be retrieved from the agent configuration
+#         provider = LLMManager.get_provider(provider_config["provider"])
+#         response = provider.generate(prompt=message)
+#         return response
+
+```
+
+
+## ./services/vector_store_service.py
+
+```python
+from abc import ABC, abstractmethod
+from typing import List, Any
+
+class BaseVectorStore(ABC):
+    @abstractmethod
+    def add_document(self, document: Any) -> None:
+        pass
+
+    @abstractmethod
+    def query(self, query_text: str, top_k: int) -> List[Any]:
+        pass
+
+# Example implementation for a vector store backend (e.g., Milvus, Qdrant)
+class DummyVectorStore(BaseVectorStore):
+    def __init__(self):
+        self.documents = []
+
+    def add_document(self, document: Any) -> None:
+        self.documents.append(document)
+
+    def query(self, query_text: str, top_k: int) -> List[Any]:
+        # Dummy implementation that returns first top_k documents
+        return self.documents[:top_k]
+
+```
+
+
+## ./services/agent_file_service.py
+
+```python
+from pathlib import Path
+from fastapi import HTTPException
+from sqlalchemy.orm import Session
+from app.db.schemas.agent_file_schema import AgentFileResponse
+from app.db.models.database_models import AgentFile, Agent
+from app.services.agent_service import AgentService
+
+UPLOAD_DIR = Path("./uploads")
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+class AgentFileService:
+    @staticmethod
+    def save_file(db: Session, agent_id: int, file, user_id: int) -> dict:
+        # Verify ownership using AgentService
+        agent = AgentService.get_agent_by_id_and_owner(db, agent_id, owner_id=user_id)
+        if not agent:
+            raise HTTPException(status_code=403, detail="Not authorized to upload files for this agent.")
+        allowed_types = {
+            "application/pdf",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        }
+        if file.content_type not in allowed_types:
+            raise HTTPException(status_code=400, detail="Invalid file type")
+        safe_filename = f"{agent_id}_{file.filename.replace('/', '_')}"
+        file_path = UPLOAD_DIR / safe_filename
+        try:
+            with file_path.open("wb") as f:
+                f.write(file.file.read())
+        except OSError as e:
+            raise HTTPException(status_code=500, detail="File upload failed") from e
+        doc = AgentService.upload_document(db, agent_id, file.filename, file.content_type)
+        if not doc:
+            raise HTTPException(status_code=500, detail="Failed to save file metadata")
+        return {"message": "File uploaded successfully", "file_id": doc.id}
+
+    @staticmethod
+    def get_files(db: Session, agent_id: int, user_id: int):
+        agent = AgentService.get_agent_by_id_and_owner(db, agent_id, owner_id=user_id)
+        if not agent:
+            return None
+        stmt = AgentService.get_agent_files(db, agent_id)
+        return [AgentFileResponse.model_validate(file) for file in stmt]
 
 ```
 
@@ -930,17 +1213,18 @@ settings = Settings()
 ## ./services/agent_service.py
 
 ```python
-from typing import Optional, List
+from typing import Optional, List, Any
 from datetime import datetime, timezone
+from sqlalchemy import select, delete
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
-from app.db.models.database_models import Agent, AgentFile, AgentCategory
+
+from app.db.models.database_models import Agent, AgentCategory, AgentFile
 from app.db.schemas.agent_schemas import AgentCreate, AgentUpdate, AgentResponse
 
 class AgentService:
     @staticmethod
     def create_agent(db: Session, agent_data: AgentCreate, owner_id: int) -> AgentResponse:
-        """Creates a new agent and commits it to the database."""
         new_agent = Agent(
             name=agent_data.name,
             description=agent_data.description,
@@ -956,47 +1240,43 @@ class AgentService:
 
     @staticmethod
     def delete_agent_categories(db: Session, agent_id: int) -> None:
-        """Deletes all category associations for a given agent."""
-        db.query(AgentCategory).filter(AgentCategory.agent_id == agent_id).delete()
+        stmt = delete(AgentCategory).where(AgentCategory.agent_id == agent_id)
+        db.execute(stmt)
         db.commit()
 
     @staticmethod
     def assign_categories(db: Session, agent_id: int, category_ids: Optional[List[int]]) -> None:
-        """Assigns categories to an agent."""
         if not category_ids:
-            return  # Avoid unnecessary operations
-        db.bulk_save_objects(
-            [AgentCategory(agent_id=agent_id, category_id=cat_id) for cat_id in category_ids]
-        )
+            return
+        objs = [AgentCategory(agent_id=agent_id, category_id=cat_id) for cat_id in category_ids]
+        db.bulk_save_objects(objs)
         db.commit()
 
     @staticmethod
     def get_public_agents(
         db: Session, category_id: Optional[int] = None, limit: int = 10, offset: int = 0
     ) -> List[AgentResponse]:
-        """Retrieves a paginated list of public agents, optionally filtered by category."""
-        query = db.query(Agent).filter(Agent.is_public.is_(True))
+        stmt = select(Agent).where(Agent.is_public.is_(True))
         if category_id:
-            query = query.join(AgentCategory).filter(AgentCategory.category_id == category_id)
-        agents = query.offset(offset).limit(limit).all()
-        return [AgentResponse.model_validate(agent) for agent in agents]
+            stmt = stmt.join(AgentCategory).where(AgentCategory.category_id == category_id)
+        stmt = stmt.offset(offset).limit(limit)
+        result = db.execute(stmt).scalars().all()
+        return [AgentResponse.model_validate(agent) for agent in result]
 
     @staticmethod
     def get_private_agents(db: Session, owner_id: int) -> List[AgentResponse]:
-        """Retrieves a list of private agents belonging to a specific user."""
-        agents = db.query(Agent).filter(Agent.owner_id == owner_id, Agent.is_public.is_(False)).all()
-        return [AgentResponse.model_validate(agent) for agent in agents]
+        stmt = select(Agent).where(Agent.owner_id == owner_id, Agent.is_public.is_(False))
+        result = db.execute(stmt).scalars().all()
+        return [AgentResponse.model_validate(agent) for agent in result]
 
     @staticmethod
-    def update_agent(
-        db: Session, agent_id: int, agent_data: AgentUpdate, owner_id: int
-    ) -> Optional[AgentResponse]:
-        """Updates an existing agent's details."""
-        agent = db.query(Agent).filter(Agent.id == agent_id, Agent.owner_id == owner_id).first()
+    def update_agent(db: Session, agent_id: int, agent_data: AgentUpdate, owner_id: int) -> Optional[AgentResponse]:
+        stmt = select(Agent).where(Agent.id == agent_id, Agent.owner_id == owner_id)
+        agent = db.execute(stmt).scalar_one_or_none()
         if not agent:
             return None
-        # Update only non-null fields
-        for field, value in agent_data.model_dump(exclude_unset=True).items():
+        update_data = agent_data.model_dump(exclude_unset=True)
+        for field, value in update_data.items():
             setattr(agent, field, value)
         db.commit()
         db.refresh(agent)
@@ -1004,8 +1284,8 @@ class AgentService:
 
     @staticmethod
     def delete_agent(db: Session, agent_id: int, owner_id: int) -> bool:
-        """Deletes an agent by ID if it exists and belongs to the user."""
-        agent = db.query(Agent).filter(Agent.id == agent_id, Agent.owner_id == owner_id).first()
+        stmt = select(Agent).where(Agent.id == agent_id, Agent.owner_id == owner_id)
+        agent = db.execute(stmt).scalar_one_or_none()
         if agent:
             db.delete(agent)
             db.commit()
@@ -1013,14 +1293,9 @@ class AgentService:
         return False
 
     @staticmethod
-    def upload_document(
-        db: Session, agent_id: int, filename: str, content_type: str
-    ) -> Optional[AgentFile]:
-        """Uploads a document and associates it with an agent."""
+    def upload_document(db: Session, agent_id: int, filename: str, content_type: str) -> Optional[AgentFile]:
         try:
-            new_doc = AgentFile(
-                agent_id=agent_id, filename=filename, content_type=content_type
-            )
+            new_doc = AgentFile(agent_id=agent_id, filename=filename, content_type=content_type)
             db.add(new_doc)
             db.commit()
             db.refresh(new_doc)
@@ -1031,15 +1306,14 @@ class AgentService:
 
     @staticmethod
     def get_agent_files(db: Session, agent_id: int) -> List[AgentFile]:
-        """Retrieves all files associated with an agent."""
-        return db.query(AgentFile).filter(AgentFile.agent_id == agent_id).all()
+        stmt = select(AgentFile).where(AgentFile.agent_id == agent_id)
+        result = db.execute(stmt).scalars().all()
+        return result
 
     @staticmethod
-    def get_agent_by_id_and_owner(
-        db: Session, agent_id: int, owner_id: int
-    ) -> Optional[Agent]:
-        """Retrieves an agent by its ID and owner ID."""
-        return db.query(Agent).filter(Agent.id == agent_id, Agent.owner_id == owner_id).first()
+    def get_agent_by_id_and_owner(db: Session, agent_id: int, owner_id: int) -> Optional[Agent]:
+        stmt = select(Agent).where(Agent.id == agent_id, Agent.owner_id == owner_id)
+        return db.execute(stmt).scalar_one_or_none()
 
 ```
 
@@ -1052,52 +1326,48 @@ class AgentService:
 # ========================
 from typing import List
 from fastapi import HTTPException
-from sqlalchemy.orm import Session, load_only
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
 from app.db.models.database_models import Category
 from app.db.schemas.category_schemas import CategoryCreate, CategoryResponse
-
 
 class CategoryService:
     @staticmethod
     def create_category(db: Session, category_data: CategoryCreate) -> CategoryResponse:
-        normalized_name = category_data.name.strip().lower()  # Convert input name to lowercase
-
-        existing_category = db.query(Category).filter(Category.name.ilike(normalized_name)).first()
+        normalized_name = category_data.name.strip().lower()
+        stmt = select(Category).where(Category.name.ilike(normalized_name))
+        existing_category = db.execute(stmt).scalar_one_or_none()
         if existing_category:
-            raise HTTPException(status_code=400, detail=f"Category with name '{category_data.name}' already exists.")
-
+            raise HTTPException(status_code=400, detail=f"Category '{category_data.name}' already exists.")
         new_category = Category(name=category_data.name.strip(), description=category_data.description)
         db.add(new_category)
         db.commit()
         db.refresh(new_category)
-        return new_category
-
-
-
+        return CategoryResponse.model_validate(new_category)
 
     @staticmethod
     def get_all_categories(db: Session) -> List[CategoryResponse]:
-        categories = (
-            db.query(Category)
-            .options(load_only(getattr(Category, "id"), getattr(Category, "name"), getattr(Category, "description")))
-            .all()
-        )
+        stmt = select(Category)
+        categories = db.execute(stmt).scalars().all()
         return [CategoryResponse.model_validate(category) for category in categories]
 
     @staticmethod
     def get_category_by_id(db: Session, category_id: int) -> CategoryResponse:
-        category = db.query(Category).filter_by(id=category_id).first()
+        stmt = select(Category).where(Category.id == category_id)
+        category = db.execute(stmt).scalar_one_or_none()
         if not category:
             raise HTTPException(status_code=404, detail="Category not found")
-        return category
+        return CategoryResponse.model_validate(category)
 
     @staticmethod
     def delete_category(db: Session, category_id: int) -> bool:
-        category = db.query(Category).filter(Category.id == category_id).first()
+        stmt = select(Category).where(Category.id == category_id)
+        category = db.execute(stmt).scalar_one_or_none()
         if category:
             db.delete(category)
             db.commit()
-            return True        
+            return True
         return False
 
 ```

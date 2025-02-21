@@ -4,8 +4,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import agents_router, category_router
-from app.core.debugger import start_debugger
-from app.core.config import settings
+from app.utils.debugger import start_debugger
+from app.utils.config import settings
 
 # Initialize logging
 logging.basicConfig(level=logging.INFO)
