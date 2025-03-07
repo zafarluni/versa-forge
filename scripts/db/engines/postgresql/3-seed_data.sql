@@ -1,9 +1,9 @@
 -- ========================
 -- Seed Users
 -- ========================
-INSERT INTO users (username, email, password_hash) VALUES
-('admin', 'admin@example.com', 'pass'),
-('zafarluni', 'zafarluni@example.com', 'pass')
+INSERT INTO users (username, full_name, email, password_hash, is_active) VALUES
+('admin', 'administrator', 'admin@example.com', '$2b$12$AGMEsNO1P6QAD6ayVIZFBO.YeyjGwV6dPftSCbA8RXBKlNB6pZ19O', true),
+('zafarluni', 'Zafar Hussain Luni', 'zafarluni@example.com', '$2b$12$AGMEsNO1P6QAD6ayVIZFBO.YeyjGwV6dPftSCbA8RXBKlNB6pZ19O', true)
 ON CONFLICT (username) DO NOTHING;
 
 -- ========================

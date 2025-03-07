@@ -10,7 +10,7 @@ Best Practices:
 - Use standardized JSON responses for API consistency.
 
 Author: Zafar Hussain Luni
-Version: 1.0.0
+Version: 1.0.1
 """
 
 import logging
@@ -26,143 +26,53 @@ from app.core.exceptions import (
 logger = logging.getLogger(__name__)
 
 
-async def resource_not_found_exception_handler(request: Request, exc: CategoryNotFoundException) -> JSONResponse:
+async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """
-    Handles Resource Not Found exceptions and returns 404 HTTP responses.
-
-    Args:
-        request (Request): The incoming request object.
-        exc (CategoryNotFoundException): The raised exception.
-
-    Returns:
-        JSONResponse: The formatted response with a 404 status code.
-    """
-    logger.warning("Resource Not Found: %s %s - %s", request.method, request.url.path, str(exc))
-    return JSONResponse(
-        status_code=404,
-        content={
-            "error": {
-                "code": 404,
-                "message": "Resource Not Found",
-                "details": str(exc),
-            }
-        },
-    )
-
-
-async def duplicate_resource_exception_handler(request: Request, exc: DuplicateCategoryException) -> JSONResponse:
-    """
-    Handles Duplicate Resource exceptions and returns 400 HTTP responses.
-
-    Args:
-        request (Request): The incoming request object.
-        exc (DuplicateCategoryException): The raised exception.
-
-    Returns:
-        JSONResponse: The formatted response with a 400 status code.
-    """
-    logger.warning("Duplicate Resource: %s %s - %s", request.method, request.url.path, str(exc))
-    return JSONResponse(
-        status_code=400,
-        content={
-            "error": {
-                "code": 400,
-                "message": "Duplicate Resource",
-                "details": str(exc),
-            }
-        },
-    )
-
-
-async def permission_denied_exception_handler(request: Request, exc: PermissionDeniedException) -> JSONResponse:
-    """
-    Handles Permission Denied exceptions and returns 403 HTTP responses.
-
-    Args:
-        request (Request): The incoming request object.
-        exc (PermissionDeniedException): The raised exception.
-
-    Returns:
-        JSONResponse: The formatted response with a 403 status code.
-    """
-    logger.warning("Permission Denied: %s %s - %s", request.method, request.url.path, str(exc))
-    return JSONResponse(
-        status_code=403,
-        content={
-            "error": {
-                "code": 403,
-                "message": "Permission Denied",
-                "details": str(exc),
-            }
-        },
-    )
-
-async def invalid_input_exception_handler(request: Request, exc: InvalidInputException) -> JSONResponse:
-    """
-    Handles invalid input errors and returns a 422 HTTP response.
-
-    Args:
-        request (Request): The incoming request object.
-        exc (InvalidInputException): The raised exception.
-
-    Returns:
-        JSONResponse: The formatted response with a 422 status code.
-    """
-    logger.warning("Invalid Input: %s %s - %s", request.method, request.url.path, str(exc))
-    return JSONResponse(
-        status_code=422,
-        content={
-            "error": {
-                "code": 422,
-                "message": "Invalid Input",
-                "details": str(exc),
-            }
-        },
-    )
-
-async def database_exception_handler(request: Request, exc: DatabaseException) -> JSONResponse:
-    """
-    Handles database errors and returns a 500 HTTP response.
-
-    Args:
-        request (Request): The incoming request object.
-        exc (DatabaseException): The raised exception.
-
-    Returns:
-        JSONResponse: The formatted response with a 500 status code.
-    """
-    logger.error("Database Error: %s %s - %s", request.method, request.url.path, str(exc))
-    return JSONResponse(
-        status_code=500,
-        content={
-            "error": {
-                "code": 500,
-                "message": "Database Error",
-                "details": str(exc),
-            }
-        },
-    )
-
-
-async def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    """
-    Handles all uncaught exceptions and prevents exposing internal errors.
+    Handles all defined and unexpected exceptions, returning appropriate responses.
 
     Args:
         request (Request): The incoming request object.
         exc (Exception): The raised exception.
 
     Returns:
-        JSONResponse: The formatted response with a 500 status code.
+        JSONResponse: A structured error response.
     """
-    logger.error("Unhandled Exception: %s %s - %s", request.method, request.url.path, str(exc), exc_info=True)
+
+    if isinstance(exc, CategoryNotFoundException):
+        status_code = 404
+        error_message = "Resource Not Found"
+
+    elif isinstance(exc, DuplicateCategoryException):
+        status_code = 400
+        error_message = "Duplicate Resource"
+
+    elif isinstance(exc, PermissionDeniedException):
+        status_code = 403
+        error_message = "Permission Denied"
+
+    elif isinstance(exc, InvalidInputException):
+        status_code = 422
+        error_message = "Invalid Input"
+
+    elif isinstance(exc, DatabaseException):
+        status_code = 500
+        error_message = "Database Error"
+
+    else:
+        status_code = 500
+        error_message = "Internal Server Error"
+
+    # Logging the error
+    log_level = logging.WARNING if status_code < 500 else logging.ERROR
+    logger.log(log_level, "%s Error: %s %s - %s", error_message, request.method, request.url.path, str(exc))
+
     return JSONResponse(
-        status_code=500,
+        status_code=status_code,
         content={
             "error": {
-                "code": 500,
-                "message": "Internal Server Error",
-                "details": "An unexpected error occurred.",
+                "code": status_code,
+                "message": error_message,
+                "details": str(exc) if status_code != 500 else "An unexpected error occurred.",
             }
         },
     )

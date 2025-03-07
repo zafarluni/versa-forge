@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     POSTGRES_DB: str
     DATABASE_PORT: str
 
+    SECRET_KEY: str 
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int
+    API_KEY: str
+
     # Docker Environment Indicator (Optional)
     RUNNING_IN_DOCKER: bool = False
 

@@ -1,8 +1,7 @@
-from sqlalchemy import (
-    Column, Integer, String, Boolean, Text, DateTime, ForeignKey, UniqueConstraint, func, text
-)
+from sqlalchemy import Column, Integer, String, Boolean, Text, DateTime, ForeignKey, UniqueConstraint, func, text
 from sqlalchemy.orm import relationship
 from app.db.database import Base
+
 
 # ========================
 # Users Table
@@ -12,8 +11,10 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     username = Column(String(50), unique=True, nullable=False, index=True)
+    full_name = Column(String(100), nullable=True)
     email = Column(String(100), unique=True, nullable=False, index=True)
     password_hash = Column(Text, nullable=False)
+    is_active = Column(Boolean, server_default=text("true"), nullable=False)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
 
     # Relationships
@@ -22,6 +23,7 @@ class User(Base):
 
     def __repr__(self) -> str:
         return f"<User(username={self.username}, email={self.email})>"
+
 
 # ========================
 # Groups Table
@@ -41,6 +43,7 @@ class Group(Base):
     def __repr__(self) -> str:
         return f"<Group(name={self.name})>"
 
+
 # ========================
 # User-Groups Junction Table
 # ========================
@@ -57,6 +60,7 @@ class UserGroup(Base):
     def __repr__(self) -> str:
         return f"<UserGroup(user_id={self.user_id}, group_id={self.group_id})>"
 
+
 # ========================
 # Categories Table
 # ========================
@@ -66,13 +70,14 @@ class Category(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(100), unique=True, nullable=False)
     description = Column(Text, nullable=True)
-    created_at = Column(DateTime, server_default=func.now(), nullable=False)  
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
 
     # Relationships
     agents = relationship("AgentCategory", back_populates="category", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<Category(name={self.name})>"
+
 
 # ========================
 # Agents Table
@@ -84,7 +89,7 @@ class Agent(Base):
     name = Column(String(100), nullable=False, unique=True)
     description = Column(Text, nullable=True)
     prompt = Column(Text, nullable=False)
-    is_public = Column(Boolean, server_default=text("false"), nullable=False)  
+    is_public = Column(Boolean, server_default=text("false"), nullable=False)
     owner_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
 
@@ -96,6 +101,7 @@ class Agent(Base):
 
     def __repr__(self) -> str:
         return f"<Agent(name={self.name}, owner_id={self.owner_id})>"
+
 
 # ========================
 # Agent-Categories Junction Table
@@ -113,6 +119,7 @@ class AgentCategory(Base):
     def __repr__(self) -> str:
         return f"<AgentCategory(agent_id={self.agent_id}, category_id={self.category_id})>"
 
+
 # ========================
 # Agent-Groups Junction Table (Visibility Control)
 # ========================
@@ -129,6 +136,7 @@ class AgentGroup(Base):
     def __repr__(self) -> str:
         return f"<AgentGroup(agent_id={self.agent_id}, group_id={self.group_id})>"
 
+
 # ========================
 # Agent-Files Table (RAG Files)
 # ========================
@@ -139,7 +147,7 @@ class AgentFile(Base):
     agent_id = Column(Integer, ForeignKey("agents.id", ondelete="CASCADE"), nullable=False, index=True)
     filename = Column(String(255), nullable=False)
     content_type = Column(String(100), nullable=False)
-    created_at = Column(DateTime, server_default=func.now(), nullable=False)  
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
 
     # Relationships
     agent = relationship("Agent", back_populates="agent_files")
