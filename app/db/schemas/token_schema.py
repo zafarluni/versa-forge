@@ -30,4 +30,3 @@ class TokenData(BaseModel):
     username: str
     full_name: Optional[str] = None
     email: Optional[str] = None
-    is_active: bool

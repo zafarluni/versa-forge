@@ -7,7 +7,6 @@ from pydantic import BaseModel, EmailStr
 
 # Shared properties
 class UserBase(BaseModel):
-    id: int
     username: str
     full_name: Optional[str] = None
     email: EmailStr
@@ -20,10 +19,13 @@ class UserCreate(UserBase):
 
 # Properties to receive via API on update
 class UserUpdate(BaseModel):
-    username: str
     full_name: Optional[str] = None
     email: Optional[EmailStr] = None
-    password: str
+
+
+class PasswordUpdate(BaseModel):
+    old_password: str
+    new_password: str
 
 
 # Properties to return via API

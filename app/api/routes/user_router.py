@@ -1,30 +1,37 @@
 from datetime import timedelta
 from typing import Dict, List
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from sqlalchemy.orm import Session
 import jwt
-
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy.orm import Session
+from app.core.auth import get_current_user
 from app.db.database import get_db
 from app.db.schemas.token_schema import TokenData
-from app.db.schemas.user_schemas import UserCreate, UserResponse
+from app.db.schemas.user_schemas import (
+    PasswordUpdate,
+    UserCreate,
+    UserResponse,
+    UserUpdate,
+)
 from app.services.user_service import UserService
-from app.core.security import create_jwt_token, get_jwt_payload
+from app.core.security import encode_jwt, extract_token_data, get_credentials_exception
 from app.utils.config import settings
 
+# ===========================
+# Router Initialization
+# ===========================
 router = APIRouter(prefix="/users", tags=["Users"])
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="users/login")
+# ===========================
+# Authentication Endpoints
+# ===========================
 
 
-# ===========================
-# 2️⃣ User Login (Issue JWT)
-# ===========================
 @router.post("/login", response_model=Dict[str, str])
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)) -> Dict[str, str]:
     """
-    Authenticate user and return a JWT token.
+    Authenticate a user and issue a JWT token.
 
     Args:
         form_data (OAuth2PasswordRequestForm): Login credentials (username=email, password).
@@ -36,117 +43,133 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     user = UserService.authenticate_user(db, form_data.username, form_data.password)
 
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise get_credentials_exception("Incorrect username or password")
 
-    # Token data to store in JWT
-    token_data = TokenData(
-        id=int(user.id),
-        username=str(user.username),
-        full_name=str(user.full_name),
-        email=str(user.email),
-        is_active=bool(user.is_active),
-    )
-    # Create JWT token
-    token = create_jwt_token(token_data=token_data, expires_delta=timedelta(minutes=60))
+    # Generate JWT token data
+    token_data = TokenData(id=user.id, username=user.username, full_name=user.full_name, email=user.email)
 
-    return {"access_token": token, "token_type": "bearer"}
+    return {
+        "access_token": encode_jwt(token_data, expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)),
+        "token_type": "bearer",
+    }
 
 
 # ===========================
-#  Verify JWT & Get User Info
+# User Management Endpoints
 # ===========================
-@router.get("/me", response_model=TokenData)
-def get_current_user(token: str = Depends(oauth2_scheme)) -> TokenData:
+
+
+@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+def register(user_data: UserCreate, db: Session = Depends(get_db)) -> UserResponse:
     """
-    Get the currently authenticated user from JWT.
+    Register a new user.
 
     Args:
-        token (str): JWT token from request.
-
-    Returns:
-        Dict[str, str]: User ID and email.
-    """
-    try:
-        return get_jwt_payload(token)
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expired")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
-
-
-# ===========================
-# Get User Details
-# ===========================
-@router.get("/{user_id}", response_model=UserResponse)
-def get_user(user_id: int, db: Session = Depends(get_db)) -> UserResponse:
-    """
-    Retrieve user details by ID.
-
-    Args:
-        user_id (int): ID of the user.
+        user_data (UserCreate): User registration details.
         db (Session): Database session.
 
     Returns:
-        UserResponse: User details.
+        UserResponse: The registered user's details.
+
+    Raises:
+        DuplicateResourceException: If the email or username already exists.
     """
-    return UserService.get_user_by_id(db, user_id)
+    return UserService.register_user(db, user_data)
 
 
-# ===========================
-# 3️⃣ User Registration
-# ===========================
-# @router.post("/register", response_model=UserResponse)
-# def register(user_data: UserCreate, db: Session = Depends(get_db)) -> UserResponse:
-#     """
-#     Register a new user.
-
-#     Args:
-#         user_data (UserCreate): User registration details.
-#         db (Session): Database session.
-
-#     Returns:
-#         UserResponse: Registered user details.
-#     """
-#     return UserService.register_user(db, user_data)
-
-
-# ===========================
-# 5️⃣ Assign User to a Group
-# ===========================
-# @router.post("/{user_id}/groups/{group_id}", response_model=Dict[str, str])
-# def assign_user_to_group(user_id: int, group_id: int, db: Session = Depends(get_db)) -> Dict[str, str]:
-#     """
-#     Assign a user to a group.
-
-#     Args:
-#         user_id (int): ID of the user.
-#         group_id (int): ID of the group.
-#         db (Session): Database session.
-
-#     Returns:
-#         Dict[str, str]: Success message.
-#     """
-#     UserService.assign_user_to_group(db, user_id, group_id)
-#     return {"message": f"User {user_id} assigned to group {group_id}"}
-
-
-# ===========================
-# 6️⃣ Get All Groups for a User
-# ===========================
-@router.get("/{user_id}/groups", response_model=List[int])
-def get_user_groups(user_id: int, db: Session = Depends(get_db)) -> List[int]:
+@router.get("/me", response_model=UserResponse)
+def get_current_user_info(
+    token_data: TokenData = Depends(extract_token_data), db: Session = Depends(get_db)
+) -> UserResponse:
     """
-    Retrieve all groups a user belongs to.
+    Retrieve the currently authenticated user from the JWT token.
 
     Args:
-        user_id (int): ID of the user.
+        token_data (TokenData): Decoded JWT token data.
+        db (Session): Database session.
+
+    Returns:
+        UserResponse: The authenticated user's details.
+
+    Raises:
+        HTTPException: If the token is expired or invalid.
+    """
+    try:
+        user = UserService.get_user_by_username(db, token_data.username)
+        if not user:
+            raise get_credentials_exception("User not found")
+        return user
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+
+@router.put("/me", response_model=UserResponse)
+def update_user_details(
+    user_data: UserUpdate,
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_user),
+) -> UserResponse:
+    """
+    Update the logged-in user's details (excluding password).
+
+    Args:
+        user_data (UserUpdate): Updated user details.
+        db (Session): Database session.
+        current_user (UserResponse): The currently authenticated user.
+
+    Returns:
+        UserResponse: The updated user's details.
+    """
+    updated_user = UserService.update_user_details(db, current_user.id, user_data)
+    return updated_user
+
+
+@router.put("/me/password", response_model=Dict[str, str])
+def change_password(
+    password_data: PasswordUpdate,
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_user),
+) -> Dict[str, str]:
+    """
+    Change the logged-in user's password.
+
+    Args:
+        password_data (PasswordUpdate): The old and new passwords.
+        db (Session): Database session.
+        current_user (UserResponse): The currently authenticated user.
+
+    Returns:
+        Dict[str, str]: A success message indicating the password was updated.
+
+    Raises:
+        HTTPException: If the old password is incorrect.
+    """
+    UserService.change_password(
+        db,
+        current_user.id,
+        old_password=password_data.old_password,
+        new_password=password_data.new_password,
+    )
+    return {"message": "Password updated successfully"}
+
+
+# ===========================
+# Group Management Endpoints
+# ===========================
+
+
+@router.get("/groups", response_model=List[int])
+def get_user_groups(user: UserResponse = Depends(get_current_user), db: Session = Depends(get_db)) -> List[int]:
+    """
+    Retrieve all groups the logged-in user belongs to.
+
+    Args:
+        user (UserResponse): The currently authenticated user.
         db (Session): Database session.
 
     Returns:
         List[int]: List of group IDs the user is assigned to.
     """
-    return UserService.get_user_groups(db, user_id)
+    return UserService.get_user_groups(db, user.id)

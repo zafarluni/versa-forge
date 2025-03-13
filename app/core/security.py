@@ -4,12 +4,10 @@ from typing import Optional
 import jwt
 import bcrypt
 from app.db.schemas.token_schema import TokenData
-from app.db.schemas.user_schemas import UserBase
 from fastapi.security import OAuth2PasswordBearer
-from fastapi import HTTPException, Depends, Security, Header, status
+from fastapi import HTTPException, Security, status
 from passlib.context import CryptContext
 from app.utils.config import settings
-
 
 # Password hashing utility
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -27,10 +25,18 @@ if not hasattr(bcrypt, "__about__"):
         pass  # In case bcrypt.__version__ does not exist, we skip setting __about__
 
 
+def get_credentials_exception(detail_message="Token expired, please login again.") -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=detail_message,
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
 # ========================
 # 🔹 Generate JWT Token
 # ========================
-def create_jwt_token(token_data: TokenData, expires_delta: Optional[timedelta] = None) -> str:
+def encode_jwt(token_data: TokenData, expires_delta: Optional[timedelta] = None) -> str:
     """
     Creates a JWT access token with an expiration time.
 
@@ -42,7 +48,7 @@ def create_jwt_token(token_data: TokenData, expires_delta: Optional[timedelta] =
         str: The encoded JWT token.
     """
     to_encode = token_data.model_dump()
-    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=30))
+    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
@@ -50,95 +56,21 @@ def create_jwt_token(token_data: TokenData, expires_delta: Optional[timedelta] =
 # ========================
 # 🔹 Validate JWT Token
 # ========================
-def get_jwt_payload(token: str = Security(oauth2_scheme)) -> TokenData:
+def extract_token_data(token: str = Security(oauth2_scheme)) -> TokenData:
     """
     Validates and decodes a JWT token.
     """
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         return TokenData.model_validate(payload)
     except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expired")  # pylint: disable=W0707:raise-missing-from
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")  # pylint: disable=W0707:raise-missing-from
-
-
-# ========================
-# 🔹 API Key Validation
-# ========================
-def verify_api_key(api_key: str = Header(None, alias="X-API-Key")) -> str:
-    """
-    Validates API key for requests that require API authentication.
-    """
-    # if not api_key or api_key != settings.API_KEY:
-    #     raise HTTPException(status_code=403, detail="Invalid API Key")
-
-    return api_key
-
-
-# ========================
-# 🔹 HMAC Signature Verification
-# ========================
-def verify_request_signature(user_id: int, api_key: str, signature: str = Header(None)) -> None:
-    """
-    Validates HMAC signature for high-security requests.
-
-    Steps:
-    1. Generates a valid HMAC hash using the user_id and API Key.
-    2. Compares it to the signature received in the request.
-    """
-    # if not signature:
-    #     raise HTTPException(status_code=400, detail="Missing HMAC signature")
-
-    # # Create HMAC signature using SHA256
-    # expected_signature = hmac.new(
-    #     key=settings.SECRET_KEY.encode(),
-    #     msg=f"{user_id}:{api_key}".encode(),
-    #     digestmod=hashlib.sha256
-    # ).hexdigest()
-
-    # # Compare received signature with expected signature
-    # if not hmac.compare_digest(expected_signature, signature):
-    #     raise HTTPException(status_code=403, detail="Invalid request signature")
-    pass
-
-
-def get_current_user(token: str = Depends(oauth2_scheme)) -> UserBase:
-    """
-    Retrieves the current user based on the provided JWT token.
-
-    Args:
-        token (str): The JWT token obtained from the request.
-
-    Returns:
-        UserInDB: The user object if the token is valid.
-
-    Raises:
-        HTTPException: If the token is invalid or the user is not found.
-    """
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-
-    try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
-            raise credentials_exception
-        token_data = TokenData(username=username)
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expired, please login again.")
+        raise get_credentials_exception("Token expired, please login again.")
     except jwt.DecodeError:
-        raise HTTPException(status_code=401, detail="Invalid token, could not decode.")
-    except Exception as exep:
-        raise credentials_exception from exep
-
-    user = get_user(db, username=token_data.username)
-    if user is None:
-        raise credentials_exception
-    return user
+        raise get_credentials_exception("Invalid token format.")
+    except jwt.InvalidTokenError:
+        raise get_credentials_exception("Invalid token signature.")
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
 # ========================

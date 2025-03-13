@@ -1,8 +1,8 @@
 """
 Business Exceptions Module
 
-This module defines custom exceptions for handling business logic errors 
-in a structured manner. Each exception is designed to be raised at the 
+This module defines custom exceptions for handling business logic errors
+in a structured manner. Each exception is designed to be raised at the
 service layer and mapped to appropriate HTTP responses in the router layer.
 
 Best Practices:
@@ -19,6 +19,9 @@ Version: 1.0.0
 # General Exceptions
 # ========================
 
+from typing import Union
+
+
 class ResourceNotFoundException(Exception):
     """
     Raised when a requested resource is not found.
@@ -29,13 +32,13 @@ class ResourceNotFoundException(Exception):
 
     Attributes:
         resource_name (str): The name of the resource.
-        resource_id (int): The unique ID of the resource.
+        resource_id (int|str): The unique ID of the resource.
     """
 
-    def __init__(self, resource_name: str, resource_id: int) -> None:
-        super().__init__(f"{resource_name} with ID {resource_id} not found.")
+    def __init__(self, resource_name: str, resource_identifier: Union[int, str]):
+        super().__init__(f"{resource_name} with identifier '{resource_identifier}' not found.")
         self.resource_name = resource_name
-        self.resource_id = resource_id
+        self.identifier = resource_identifier
 
 
 class DuplicateResourceException(Exception):
@@ -85,6 +88,7 @@ class InvalidInputException(Exception):
 # Category-Specific Exceptions
 # ========================
 
+
 class CategoryNotFoundException(ResourceNotFoundException):
     """
     Raised when a category is not found in the database.
@@ -112,6 +116,7 @@ class DuplicateCategoryException(DuplicateResourceException):
 # ========================
 # Agent-Specific Exceptions
 # ========================
+
 
 class AgentNotFoundException(ResourceNotFoundException):
     """
@@ -162,6 +167,7 @@ class AgentFileUploadException(Exception):
 # File-Specific Exceptions
 # ========================
 
+
 class FileNotFoundException(ResourceNotFoundException):
     """
     Raised when a requested file is not found.
@@ -202,6 +208,7 @@ class UnsupportedFileTypeException(Exception):
 # Chat & LLM-Specific Exceptions
 # ========================
 
+
 class LLMProviderNotFoundException(Exception):
     """
     Raised when an LLM provider is not found.
@@ -241,6 +248,7 @@ class InvalidPromptException(Exception):
 # ========================
 # Database & Infrastructure Exceptions
 # ========================
+
 
 class DatabaseException(Exception):
     """
