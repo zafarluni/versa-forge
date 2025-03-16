@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes import user_router, agents_router, category_router
 from app.utils.debugger import start_debugger
 from app.utils.config import settings
-from app.api.error_handlers import global_exception_handler
+from app.api.exception_handler import global_exception_handler
 
 # Initialize logging
 logging.basicConfig(level=logging.INFO)
@@ -32,20 +32,15 @@ app.add_middleware(
 )
 
 # ✅ Register Exception Handlers
-# app.add_exception_handler(ResourceNotFoundException, resource_not_found_exception_handler)
-# app.add_exception_handler(DuplicateResourceException, duplicate_resource_exception_handler)
-# app.add_exception_handler(PermissionDeniedException, permission_denied_exception_handler)
-# app.add_exception_handler(DatabaseException, database_exception_handler)
-# app.add_exception_handler(InvalidInputException, invalid_input_exception_handler)
-app.add_exception_handler(Exception, global_exception_handler)  # Catch-all handler
+app.add_exception_handler(Exception, global_exception_handler)
 
 # ✅ Register Routers
 app.include_router(user_router.router)
-app.include_router(agents_router.router)
-app.include_router(category_router.router)
+# app.include_router(agents_router.router)
+# app.include_router(category_router.router)
 
 
-# ✅ Health Check Endpoint
+# ✅ Health Check Endpoint1
 @app.get("/", tags=["Health"])
 def health_check() -> Dict[str, str]:
     logger.info("Health check endpoint accessed.")

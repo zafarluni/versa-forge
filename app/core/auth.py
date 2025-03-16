@@ -1,5 +1,5 @@
 from fastapi import Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 import jwt
 from app.core.security import extract_token_data, get_credentials_exception, oauth2_scheme
@@ -8,7 +8,7 @@ from app.db.schemas.user_schemas import UserResponse
 from app.services.user_service import UserService
 
 
-def get_current_user(db: Session = Depends(get_db), token: str = Depends(oauth2_scheme)) -> UserResponse:
+async def get_current_user(db: AsyncSession = Depends(get_db), token: str = Depends(oauth2_scheme)) -> UserResponse:
     """
     Retrieves the current user based on the provided JWT token.
 
@@ -33,7 +33,7 @@ def get_current_user(db: Session = Depends(get_db), token: str = Depends(oauth2_
     if not hasattr(tokenData, "username") or not tokenData.username:
         raise get_credentials_exception("Invalid token payload")
 
-    user = UserService.get_user_by_username(db, tokenData.username)
+    user = await UserService.get_user_by_username(db, tokenData.username)
     if not user:
         raise get_credentials_exception("User not found")
 
