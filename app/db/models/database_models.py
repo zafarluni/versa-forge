@@ -21,6 +21,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, server_default=text("true"), nullable=False)
+    is_admin: Mapped[bool] = mapped_column(Boolean, server_default=text("true"), nullable=False)
     created_at: Mapped[DateTime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
     # Relationships

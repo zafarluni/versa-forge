@@ -36,8 +36,8 @@ app.add_exception_handler(Exception, global_exception_handler)
 
 # ✅ Register Routers
 app.include_router(user_router.router)
-# app.include_router(agents_router.router)
-# app.include_router(category_router.router)
+app.include_router(agents_router.router)
+app.include_router(category_router.router)
 
 
 # ✅ Health Check Endpoint1

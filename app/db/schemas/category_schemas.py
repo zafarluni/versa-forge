@@ -4,6 +4,7 @@ from typing import Optional
 from datetime import datetime
 from pydantic import BaseModel, Field, field_validator
 
+
 # Shared properties
 class CategoryBase(BaseModel):
     name: str = Field(..., min_length=5, max_length=100)
@@ -25,10 +26,12 @@ class CategoryBase(BaseModel):
 class CategoryCreate(CategoryBase):
     pass
 
+
 # Properties to receive via API on update
 class CategoryUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
+
 
 # Properties to return via API
 class CategoryResponse(CategoryBase):

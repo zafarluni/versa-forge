@@ -1,169 +1,146 @@
-from typing import Optional, List
-from fastapi import HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import List
+import logging
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import verify_password, get_password_hash
 from app.db.models.database_models import User, UserGroup
 from app.db.schemas.user_schemas import UserCreate, UserResponse, UserUpdate
-from app.core.exceptions import DuplicateResourceException, ResourceNotFoundException
+from app.core.exceptions import DuplicateResourceException, ResourceNotFoundException, PermissionDeniedException
+
+logger = logging.getLogger(__name__)
 
 
 class UserService:
     """
     Service Layer for User Management
-    Handles all user-related database operations:
-    - Secure password hashing & authentication.
-    - User creation, retrieval, and updates.
-    - Managing user-group assignments.
+    Handles user registration, authentication, updates, and group assignments.
+    All database operations are wrapped in implicit transactions via the `get_db` dependency.
     """
 
     @staticmethod
     async def register_user(db: AsyncSession, user_data: UserCreate) -> UserResponse:
         """
-        Registers a new user with hashed password.
-        Ensures email and username uniqueness.
+        Registers a new user after validating email/username uniqueness.
 
         Args:
-            db (AsyncSession): The database AsyncSession.
-            user_data (UserCreate): User registration details.
+            db: Async database session.
+            user_data: User registration details (validated by Pydantic).
 
         Returns:
-            UserResponse: The created user's details.
+            The registered user's details.
 
         Raises:
-            DuplicateResourceException: If the email or username already exists.
+            DuplicateResourceException: If the email or username is already taken.
         """
-        # Check for duplicate email or username
+        # Check for existing user with the same email or username
         result = await db.execute(
             select(User).where((User.email == user_data.email) | (User.username == user_data.username))
         )
         existing_user = result.scalar_one_or_none()
-
         if existing_user:
-            raise DuplicateResourceException("User", user_data.username)
+            # Determine which field caused the conflict
+            conflict_field = "email" if existing_user.email == user_data.email else "username"
+            raise DuplicateResourceException(
+                "User", f"{conflict_field}='{user_data.email if conflict_field == 'email' else user_data.username}'"
+            )
 
-        # Create new user
+        # Create and persist the user
         new_user = User(
             username=user_data.username,
             email=user_data.email,
             password_hash=get_password_hash(user_data.password),
         )
-
         db.add(new_user)
-        await db.commit()
-        await db.refresh(new_user)
-
+        await db.flush()  # Let the transaction context handle the final commit
+        logger.info(f"Registered user: {new_user.username} (ID: {new_user.id})")
         return UserResponse.model_validate(new_user)
 
     @staticmethod
     async def update_user_details(db: AsyncSession, user_id: int, update_data: UserUpdate) -> UserResponse:
         """
-        Updates a user's details (excluding password).
+        Updates a user's non-sensitive details (full name, email).
 
         Args:
-            db (AsyncSession): The database AsyncSession.
-            user_id (int): The ID of the user to update.
-            update_data (UserUpdate): Updated user details.
+            db: Async database session.
+            user_id: ID of the user to update.
+            update_data: Updated user details (validated by Pydantic).
 
         Returns:
-            UserResponse: The updated user's details.
+            The updated user's details.
 
         Raises:
             ResourceNotFoundException: If the user does not exist.
+            DuplicateResourceException: If the updated email is already taken.
         """
-        result = await db.execute(select(User).where(User.id == user_id))
-        user = result.scalar_one_or_none()
+        user = await UserService._get_user(db, user_id)
 
-        if not user:
-            raise ResourceNotFoundException("User", user_id)
+        # Validate email uniqueness if updating email
+        if update_data.email:
+            await UserService._validate_unique_email(db, update_data.email, exclude_id=user_id)
 
-        # Update non-password fields
-        user.full_name = update_data.full_name or user.full_name
-        user.email = update_data.email or user.email
+        # Apply updates
+        if update_data.full_name:
+            user.full_name = update_data.full_name
+        if update_data.email:
+            user.email = update_data.email
 
-        await db.commit()
-        await db.refresh(user)
-
-        return UserResponse.model_validate(user)
+        try:
+            await db.flush()  # Ensure constraints are checked
+            logger.info(f"Updated user ID {user_id}: {update_data}")
+            return UserResponse.model_validate(user)
+        except IntegrityError as e:
+            await db.rollback()
+            raise DuplicateResourceException("User", f"email={update_data.email}") from e
 
     @staticmethod
-    async def change_password(db: AsyncSession, user_id: int, old_password: str, new_password: str) -> bool:
+    async def change_password(db: AsyncSession, user_id: int, old_password: str, new_password: str) -> None:
         """
-        Changes a user's password after validating the old password.
+        Changes a user's password after verifying the old password.
 
         Args:
-            db (AsyncSession): The database AsyncSession.
-            user_id (int): The ID of the user.
-            old_password (str): The current password.
-            new_password (str): The new password.
-
-        Returns:
-            bool: True if the password was successfully updated.
+            db: Async database session.
+            user_id: ID of the user.
+            old_password: Current password for verification.
+            new_password: New password to set.
 
         Raises:
             ResourceNotFoundException: If the user does not exist.
-            HTTPException: If the old password is incorrect.
+            PermissionDeniedException: If the old password is incorrect.
         """
-        result = await db.execute(select(User).where(User.id == user_id))
-        user = result.scalar_one_or_none()
+        user = await UserService._get_user(db, user_id)
 
-        if not user:
-            raise ResourceNotFoundException("User", user_id)
-
-        # Validate old password
         if not verify_password(old_password, user.password_hash):
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Old password is incorrect")
+            raise PermissionDeniedException("Old password is incorrect")
 
-        # Update password
         user.password_hash = get_password_hash(new_password)
-        await db.commit()
-
-        return True
+        await db.flush()  # Persist changes within the transaction
+        logger.info(f"Password updated for user ID {user_id}")
 
     @staticmethod
-    async def authenticate_user(db: AsyncSession, username: str, password: str) -> Optional[UserResponse]:
+    async def authenticate_user(db: AsyncSession, username: str, password: str) -> UserResponse:
         """
-        Authenticates a user by verifying their credentials.
+        Authenticates a user by verifying credentials.
 
         Args:
-            db (AsyncSession): The database AsyncSession.
-            username (str): The user's username.
-            password (str): The user's password.
+            db: Async database session.
+            username: The user's username.
+            password: The user's password.
 
         Returns:
-            Optional[UserResponse]: The authenticated user's details, or None if invalid.
+            Authenticated user details.
 
         Raises:
-            HTTPException: If the credentials are invalid.
+            ResourceNotFoundException: If the user does not exist.
+            PermissionDeniedException: If the password is incorrect.
         """
         result = await db.execute(select(User).where(User.username == username))
         user = result.scalar_one_or_none()
 
-        if not user or not verify_password(password, user.password_hash):
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid username or password")
-
-        return UserResponse.model_validate(user)
-
-    @staticmethod
-    async def get_user_by_id(db: AsyncSession, user_id: int) -> UserResponse:
-        """
-        Retrieves a user by their ID.
-
-        Args:
-            db (AsyncSession): The database AsyncSession.
-            user_id (int): The ID of the user.
-
-        Returns:
-            UserResponse: The requested user's details.
-
-        Raises:
-            ResourceNotFoundException: If the user does not exist.
-        """
-        result = await db.execute(select(User).where(User.id == user_id))
-        user = result.scalar_one_or_none()
-
         if not user:
-            raise ResourceNotFoundException("User", user_id)
+            raise ResourceNotFoundException("User", username)
+        if not verify_password(password, user.password_hash):
+            raise PermissionDeniedException("Invalid password")
 
         return UserResponse.model_validate(user)
 
@@ -173,64 +150,94 @@ class UserService:
         Retrieves a user by their username.
 
         Args:
-            db (AsyncSession): The database AsyncSession.
-            username (str): The username of the user.
+            db: Async database session.
+            username: The username to query.
 
         Returns:
-            UserResponse: The requested user's details.
+            User details.
 
         Raises:
             ResourceNotFoundException: If the user does not exist.
         """
         result = await db.execute(select(User).where(User.username == username))
         user = result.scalar_one_or_none()
-
         if not user:
             raise ResourceNotFoundException("User", username)
-
         return UserResponse.model_validate(user)
 
     @staticmethod
     async def assign_user_to_group(db: AsyncSession, user_id: int, group_id: int) -> None:
         """
-        Assigns a user to a group.
-        Ensures no duplicate assignments.
+        Assigns a user to a group, ensuring no duplicates.
 
         Args:
-            db (AsyncSession): The database AsyncSession.
-            user_id (int): The ID of the user.
-            group_id (int): The ID of the group.
+            db: Async database session.
+            user_id: ID of the user.
+            group_id: ID of the group.
 
         Raises:
-            HTTPException: If an error occurs during assignment.
+            DuplicateResourceException: If the user is already in the group.
         """
+        user_group = UserGroup(user_id=user_id, group_id=group_id)
         try:
-            result = await db.execute(
-                select(UserGroup).where(UserGroup.user_id == user_id, UserGroup.group_id == group_id)
-            )
-            existing_assignment = result.scalar_one_or_none()
-
-            if not existing_assignment:
-                user_group = UserGroup(user_id=user_id, group_id=group_id)
-                db.add(user_group)
-                await db.commit()
-        except Exception as e:
+            db.add(user_group)
+            await db.flush()  # Let the database enforce uniqueness
+        except IntegrityError as e:
             await db.rollback()
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+            raise DuplicateResourceException("UserGroup", f"user_id={user_id}, group_id={group_id}") from e
 
     @staticmethod
     async def get_user_groups(db: AsyncSession, user_id: int) -> List[int]:
         """
-        Retrieves all group IDs for a given user.
+        Retrieves all group IDs associated with a user.
 
         Args:
-            db (AsyncSession): The database session.
-            user_id (int): The ID of the user.
+            db: Async database session.
+            user_id: ID of the user.
 
         Returns:
-            List[int]: A list of group IDs the user belongs to.
+            List of group IDs.
         """
         result = await db.execute(select(UserGroup.group_id).where(UserGroup.user_id == user_id))
-        groups = result.scalars().all()
+        return result.scalars().all()
 
-        return list(groups)
+    # ===========================
+    # Validation Helpers
+    # ===========================
+    @staticmethod
+    async def _get_user(db: AsyncSession, user_id: int) -> User:
+        """
+        Internal helper to fetch a user by ID.
+
+        Args:
+            db: Async database session.
+            user_id: ID of the user.
+
+        Raises:
+            ResourceNotFoundException: If the user does not exist.
+        """
+        result = await db.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+        if not user:
+            raise ResourceNotFoundException("User", user_id)
+        return user
+
+    @staticmethod
+    async def _validate_unique_email(db: AsyncSession, email: str, exclude_id: int = None) -> None:
+        """
+        Validates email uniqueness during updates.
+
+        Args:
+            db: Async database session.
+            email: Email to check.
+            exclude_id: User ID to exclude from the check (for updates).
+
+        Raises:
+            DuplicateResourceException: If the email is already taken.
+        """
+        stmt = select(User).where(User.email == email)
+        if exclude_id:
+            stmt = stmt.where(User.id != exclude_id)
+        result = await db.execute(stmt)
+        if result.scalar_one_or_none():
+            raise DuplicateResourceException("User", f"email={email}")

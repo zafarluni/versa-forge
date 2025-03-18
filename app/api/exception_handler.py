@@ -14,6 +14,8 @@ import logging
 import traceback
 from fastapi import Request
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from pydantic import ValidationError
 from app.utils.config import settings
 from app.core.exceptions import (
     CategoryNotFoundException,
@@ -30,6 +32,7 @@ logger = logging.getLogger(__name__)
 
 # Exception mapping dictionary
 EXCEPTION_MAP = {
+    RequestValidationError: (422, "Validation Error"),
     ResourceNotFoundException: (404, "Resource Not Found"),
     CategoryNotFoundException: (404, "Resource Not Found"),
     DuplicateCategoryException: (400, "Duplicate Resource"),
@@ -52,8 +55,10 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
     Returns:
         JSONResponse: A structured error response.
     """
+    # If its a Validation Error, return a human-readable message
+    if isinstance(exc, ValidationError):
+        return return_human_readable_validation_error(exc)
 
-    logger.critical("ZAFAR:: Called global_exception_handler")
     # Map the exception to a status code and message
     exception_info = EXCEPTION_MAP.get(type(exc), (500, "Internal Server Error"))
     status_code, error_message = exception_info
@@ -88,3 +93,24 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
         error_response["error"]["traceback"] = traceback_details
 
     return JSONResponse(status_code=status_code, content=error_response)
+
+
+def return_human_readable_validation_error(exc: ValidationError) -> JSONResponse:
+    # Extract simplified error details
+    error_details = [
+        {
+            "field": error["loc"][-1],  # Field name
+            "message": error["msg"],  # Human-readable error message
+        }
+        for error in exc.errors()
+    ]
+    status_code = 422
+    error_message = "Validation Error"
+    response_content = {
+        "error": {
+            "code": status_code,
+            "message": error_message,
+            "details": error_details,  # Simplified error details
+        }
+    }
+    return JSONResponse(status_code=status_code, content=response_content)

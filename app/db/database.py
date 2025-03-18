@@ -30,5 +30,6 @@ AsyncSessionLocal = async_sessionmaker(
 # mypy: ignore-errors
 async def get_db():
     """Yields an async database session."""
-    async with AsyncSessionLocal() as db:
-        yield db
+    async with AsyncSessionLocal() as session:
+        async with session.begin():
+            yield session
