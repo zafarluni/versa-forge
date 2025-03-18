@@ -1,6 +1,7 @@
 # agent_service.py
 from typing import List, Optional
 from sqlalchemy import select, delete
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
 from app.db.models.database_models import Agent, AgentCategory
@@ -83,7 +84,13 @@ class AgentService:
     @staticmethod
     async def update_agent(db: AsyncSession, agent_id: int, agent_data: AgentUpdate, user_id: int) -> AgentResponse:
         """Update existing agent with ownership check"""
-        query = select(Agent).where((Agent.id == agent_id) & (Agent.owner_id == user_id))
+
+        query = (
+            select(Agent)
+            .where((Agent.id == agent_id) & (Agent.owner_id == user_id))
+            .options(selectinload(Agent.categories))
+        )  # Eager load categories
+
         result = await db.execute(query)
         agent = result.scalar_one_or_none()
 
@@ -91,6 +98,20 @@ class AgentService:
             raise ResourceNotFoundException("Agent", agent_id)
 
         update_data = agent_data.model_dump(exclude_unset=True)
+
+        # Handle categories separately
+        if "categories" in update_data:
+            # Clear existing categories
+            agent.categories.clear()
+
+            # Add new categories
+            new_categories = []
+            for category_id in update_data["categories"]:
+                new_categories.append(AgentCategory(agent_id=agent.id, category_id=category_id))
+            agent.categories.extend(new_categories)
+            del update_data["categories"]  # Remove from generic update
+
+        # Update other fields
         for key, value in update_data.items():
             setattr(agent, key, value)
 
