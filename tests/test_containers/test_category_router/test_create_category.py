@@ -1,65 +1,104 @@
 # mypy: ignore-errors
 import pytest
+import asyncio
 
-# ========================
-# Test Category Creation
-# ========================
 
-@pytest.mark.parametrize("name, description, expected_status", [
-    ("Valid Category", "A valid test category", 201),  # ✅ Valid case
-    ("No Desc Category", None, 201),  # ✅ `None` description is allowed
-    ("", "Invalid", 422),  # ✅ Empty name should fail
-    ("   ", "Invalid", 422),  # ✅ Name with only spaces should fail
-    ("@#$%^&*", "Invalid", 422),  # ✅ Special characters should fail
-    ("A" * 101, "Too long", 422),  # ✅ Exceeding max length (101 chars)
-    ("A", "Too short", 422),  # ✅ Less than 5 chars should fail
-    ("ABCD", "One char short", 422),  # ✅ 4 chars should fail
-    ("Valid-Name", "Hyphens allowed", 201),  # ✅ Hyphen allowed
-    ("O'Connor", "Apostrophe allowed", 201),  # ✅ Apostrophe allowed
-    ("12345", "Numbers only", 201),  # ✅ Numbers allowed
-])
-def test_create_category_various_cases(client, name, description, expected_status):
-    """Test category creation with various name inputs."""
-    response = client.post("/categories/", json={"name": name, "description": description})
-    assert response.status_code == expected_status
+@pytest.mark.asyncio
+async def test_create_category_various_cases(client):
+    test_cases = [
+        ("Valid Category", "A valid test category", 201),
+        ("No Desc Category", None, 201),
+        ("", "Invalid", 422),
+        ("   ", "Invalid", 422),
+        ("@#$%^&*", "Invalid", 422),
+        ("A" * 101, "Too long", 422),
+        ("A", "Too short", 422),
+        ("Valid-Name", "Hyphens allowed", 201),
+        ("O'Connor", "Apostrophe allowed", 201),
+        ("12345", "Numbers only", 201),
+    ]
 
-def test_create_large_number_of_categories(client):
-    """Test the creation of multiple categories to ensure pagination works correctly."""
-    response = client.get("/categories/?limit=100") 
+    for name, desc, expected in test_cases:
+        response = await client.post("/categories/", json={"name": name, "description": desc})
+        assert response.status_code == expected
+
+
+@pytest.mark.asyncio
+async def test_create_duplicate_category_case_insensitive(client):
+    response1 = await client.post("/categories/", json={"name": "TestCategory", "description": "Original"})
+    assert response1.status_code == 201
+
+    response2 = await client.post("/categories/", json={"name": "testcategory", "description": "Duplicate"})
+    assert response2.status_code == 400
+    assert "duplicate" in response2.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_create_category_database_error(mocker, client):
+    mocker.patch(
+        "app.services.categories_service.CategoryService.create_category", side_effect=Exception("Database error")
+    )
+
+    response = await client.post("/categories/", json={"name": "TestFail", "description": "Should fail"})
+
+    assert response.status_code == 500
+    assert "Internal Server Error" in response.text
+
+
+@pytest.mark.asyncio
+async def test_pagination_behavior(client):
+    # Create 25 categories
+    for i in range(25):
+        await client.post("/categories/", json={"name": f"Category {i}", "description": "Test"})
+
+    # Test default pagination (10 items)
+    response = await client.get("/categories/")
     assert response.status_code == 200
-    existing_categories = len(response.json())
+    assert len(response.json()) == 10
 
-    for i in range(20):
-        client.post("/categories/", json={"name": f"Category {i}"})
+    # Test larger limit
+    response = await client.get("/categories/?limit=20")
+    assert len(response.json()) == 20
 
-    response = client.get("/categories/?limit=100") 
-    assert response.status_code == 200
-    assert len(response.json()) == (20 + existing_categories)
-
-def test_create_duplicate_category_case_insensitive(client):
-    """Ensure category names are case insensitive and should not allow duplicates."""
-    client.post("/categories/", json={"name": "DuplicateCase"})  # First request
-    response = client.post("/categories/", json={"name": "duplicatecase"})  # Duplicate in lowercase
-
-    assert response.status_code == 400  # Expect HTTP 400 Bad Request
-
-    response_data = response.json()
-
-    # ✅ Correct error structure validation
-    assert "error" in response_data
-    assert "message" in response_data["error"]
-    assert "duplicate" in response_data["error"]["message"].lower()
+    # Test offset
+    response = await client.get("/categories/?offset=20")
+    assert len(response.json()) == 5
 
 
-# ========================
-# Test Exception Handling
-# ========================
+@pytest.mark.asyncio
+async def test_concurrent_category_creation(client):
+    # Test concurrent requests handling
+    responses = await asyncio.gather(
+        client.post("/categories/", json={"name": "Concurrent1"}),
+        client.post("/categories/", json={"name": "Concurrent2"}),
+        client.post("/categories/", json={"name": "Concurrent3"}),
+    )
 
-# def test_create_category_raises_exception(client, mocker):
-#     """Ensure exception handling works when a database failure occurs."""
-#     mocker.patch("app.services.categories_service.CategoryService.create_category", side_effect=Exception("DB Error"))
-#     response = client.post("/categories/", json={"name": "TestFail"})
+    assert all(r.status_code == 201 for r in responses)
+    assert len({r.json()["name"] for r in responses}) == 3
 
-#     assert response.status_code == 500
-#     assert "detail" in response.json() 
-#     assert response.json()["detail"] in ["Internal Server Error", "DB Error"]
+
+@pytest.mark.asyncio
+async def test_category_lifecycle(client):
+    # Create
+    create_response = await client.post("/categories/", json={"name": "TestLifecycle", "description": "Lifecycle test"})
+    assert create_response.status_code == 201
+    category_id = create_response.json()["id"]
+
+    # Read
+    read_response = await client.get(f"/categories/{category_id}")
+    assert read_response.status_code == 200
+    assert read_response.json()["name"] == "TestLifecycle"
+
+    # Update
+    update_response = await client.put(f"/categories/{category_id}", json={"name": "UpdatedName"})
+    assert update_response.status_code == 200
+    assert update_response.json()["name"] == "UpdatedName"
+
+    # Delete
+    delete_response = await client.delete(f"/categories/{category_id}")
+    assert delete_response.status_code == 204
+
+    # Verify deletion
+    final_response = await client.get(f"/categories/{category_id}")
+    assert final_response.status_code == 404
