@@ -1,13 +1,17 @@
 # mypy: ignore-errors
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
-import jwt
+
 import bcrypt
-from app.db.schemas.token_schema import TokenData
-from fastapi.security import OAuth2PasswordBearer
+import jwt
 from fastapi import HTTPException, Security, status
+from fastapi.security import OAuth2PasswordBearer
 from passlib.context import CryptContext
-from app.utils.config import settings
+
+from app.schemas.token_schema import TokenData
+from app.utils.config import get_settings
+
+settings = get_settings()
 
 # Password hashing utility
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -18,9 +22,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="users/login")
 # Ensure bcrypt.__about__ exists to avoid compatibility issues with Passlib
 if not hasattr(bcrypt, "__about__"):
     try:
-        setattr(
-            bcrypt, "__about__", type("about", (object,), {"__version__": getattr(bcrypt, "__version__", "unknown")})
-        )
+        bcrypt.__about__ = type("about", (object,), {"__version__": getattr(bcrypt, "__version__", "unknown")})  # type: ignore
     except AttributeError:
         pass  # In case bcrypt.__version__ does not exist, we skip setting __about__
 
@@ -48,9 +50,11 @@ def encode_jwt(token_data: TokenData, expires_delta: Optional[timedelta] = None)
         str: The encoded JWT token.
     """
     to_encode = token_data.model_dump()
-    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
+    expire = datetime.now(timezone.utc) + (
+        expires_delta or timedelta(minutes=settings.security.access_token_expire_minutes)
+    )
     to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    return jwt.encode(to_encode, settings.security.secret_key, algorithm=settings.security.algorithm)
 
 
 # ========================
@@ -61,16 +65,16 @@ def extract_token_data(token: str = Security(oauth2_scheme)) -> TokenData:
     Validates and decodes a JWT token.
     """
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        payload = jwt.decode(token, settings.security.secret_key, algorithms=[settings.security.algorithm])
         return TokenData.model_validate(payload)
     except jwt.ExpiredSignatureError:
-        raise get_credentials_exception("Token expired, please login again.")
+        raise get_credentials_exception("Token expired, please login again.") from None
     except jwt.DecodeError:
-        raise get_credentials_exception("Invalid token format.")
+        raise get_credentials_exception("Invalid token format.") from None
     except jwt.InvalidTokenError:
-        raise get_credentials_exception("Invalid token signature.")
+        raise get_credentials_exception("Invalid token signature.") from None
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)) from e
 
 
 # ========================

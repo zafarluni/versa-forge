@@ -12,20 +12,24 @@ Version: 1.1.0
 
 import logging
 import traceback
+
 from fastapi import Request
-from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from pydantic import ValidationError
-from app.utils.config import settings
+
 from app.core.exceptions import (
-    CategoryNotFoundException,
-    DuplicateCategoryException,
-    DatabaseException,
-    InvalidInputException,
-    PermissionDeniedException,
-    ResourceNotFoundException,
-    DuplicateResourceException,
+    CategoryNotFoundError,
+    DatabaseError,
+    DuplicateCategoryError,
+    DuplicateResourceError,
+    InvalidInputError,
+    PermissionDeniedError,
+    ResourceNotFoundError,
 )
+from app.utils.config import get_settings
+
+settings = get_settings()
 
 # Configure logging for error tracking
 logger = logging.getLogger(__name__)
@@ -33,13 +37,13 @@ logger = logging.getLogger(__name__)
 # Exception mapping dictionary
 EXCEPTION_MAP = {
     RequestValidationError: (422, "Validation Error"),
-    ResourceNotFoundException: (404, "Resource Not Found"),
-    CategoryNotFoundException: (404, "Resource Not Found"),
-    DuplicateCategoryException: (400, "Duplicate Resource"),
-    DuplicateResourceException: (400, "Duplicate Resource"),
-    PermissionDeniedException: (403, "Permission Denied"),
-    InvalidInputException: (422, "Invalid Input"),
-    DatabaseException: (500, "Database Error"),
+    ResourceNotFoundError: (404, "Resource Not Found"),
+    CategoryNotFoundError: (404, "Resource Not Found"),
+    DuplicateCategoryError: (400, "Duplicate Resource"),
+    DuplicateResourceError: (400, "Duplicate Resource"),
+    PermissionDeniedError: (403, "Permission Denied"),
+    InvalidInputError: (422, "Invalid Input"),
+    DatabaseError: (500, "Database Error"),
 }
 
 
@@ -64,7 +68,7 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
     status_code, error_message = exception_info
 
     # Include traceback in debug mode
-    include_traceback = settings.DEBUG_MODE
+    include_traceback = settings.debug_mode
     traceback_details = traceback.format_exc() if include_traceback else None
 
     # Logging the error

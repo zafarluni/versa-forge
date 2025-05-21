@@ -22,7 +22,7 @@ Version: 1.0.0
 from typing import Union
 
 
-class ResourceNotFoundException(Exception):
+class ResourceNotFoundError(Exception):
     """
     Raised when a requested resource is not found.
 
@@ -41,7 +41,7 @@ class ResourceNotFoundException(Exception):
         self.identifier = resource_identifier
 
 
-class DuplicateResourceException(Exception):
+class DuplicateResourceError(Exception):
     """
     Raised when trying to create a duplicate resource.
 
@@ -60,7 +60,7 @@ class DuplicateResourceException(Exception):
         self.identifier = identifier
 
 
-class PermissionDeniedException(Exception):
+class PermissionDeniedError(Exception):
     """
     Raised when a user tries to access a resource they do not have permission for.
 
@@ -72,7 +72,7 @@ class PermissionDeniedException(Exception):
         super().__init__(message)
 
 
-class InvalidInputException(Exception):
+class InvalidInputError(Exception):
     """
     Raised when an invalid input is provided.
 
@@ -89,7 +89,7 @@ class InvalidInputException(Exception):
 # ========================
 
 
-class CategoryNotFoundException(ResourceNotFoundException):
+class CategoryNotFoundError(ResourceNotFoundError):
     """
     Raised when a category is not found in the database.
 
@@ -101,7 +101,7 @@ class CategoryNotFoundException(ResourceNotFoundException):
         super().__init__("Category", category_id)
 
 
-class DuplicateCategoryException(DuplicateResourceException):
+class DuplicateCategoryError(DuplicateResourceError):
     """
     Raised when a category with the same name already exists.
 
@@ -118,7 +118,7 @@ class DuplicateCategoryException(DuplicateResourceException):
 # ========================
 
 
-class AgentNotFoundException(ResourceNotFoundException):
+class AgentNotFoundError(ResourceNotFoundError):
     """
     Raised when an agent is not found in the database.
 
@@ -130,7 +130,7 @@ class AgentNotFoundException(ResourceNotFoundException):
         super().__init__("Agent", agent_id)
 
 
-class DuplicateAgentException(DuplicateResourceException):
+class DuplicateAgentError(DuplicateResourceError):
     """
     Raised when an agent with the same name already exists.
 
@@ -142,7 +142,7 @@ class DuplicateAgentException(DuplicateResourceException):
         super().__init__("Agent", name)
 
 
-class UnauthorizedAgentAccessException(PermissionDeniedException):
+class UnauthorizedAgentAccessError(PermissionDeniedError):
     """
     Raised when a user tries to access or modify an agent they do not own.
     """
@@ -151,7 +151,7 @@ class UnauthorizedAgentAccessException(PermissionDeniedException):
         super().__init__("You do not have permission to modify this agent.")
 
 
-class AgentFileUploadException(Exception):
+class AgentFileUploadError(Exception):
     """
     Raised when an error occurs during file upload.
 
@@ -168,7 +168,7 @@ class AgentFileUploadException(Exception):
 # ========================
 
 
-class FileNotFoundException(ResourceNotFoundException):
+class FileNotFoundError(ResourceNotFoundError):
     """
     Raised when a requested file is not found.
 
@@ -180,7 +180,7 @@ class FileNotFoundException(ResourceNotFoundException):
         super().__init__("File", file_id)
 
 
-class FileUploadException(Exception):
+class FileUploadError(Exception):
     """
     Raised when a file upload fails.
 
@@ -192,7 +192,7 @@ class FileUploadException(Exception):
         super().__init__(message)
 
 
-class UnsupportedFileTypeException(Exception):
+class UnsupportedFileTypeError(Exception):
     """
     Raised when an unsupported file type is uploaded.
 
@@ -209,7 +209,7 @@ class UnsupportedFileTypeException(Exception):
 # ========================
 
 
-class LLMProviderNotFoundException(Exception):
+class LLMProviderNotFoundError(Exception):
     """
     Raised when an LLM provider is not found.
 
@@ -221,7 +221,7 @@ class LLMProviderNotFoundException(Exception):
         super().__init__(f"LLM provider '{provider_name}' not found.")
 
 
-class LLMResponseException(Exception):
+class LLMResponseError(Exception):
     """
     Raised when an error occurs while generating a response from an LLM.
 
@@ -233,7 +233,7 @@ class LLMResponseException(Exception):
         super().__init__(message)
 
 
-class InvalidPromptException(Exception):
+class InvalidPromptError(Exception):
     """
     Raised when an invalid prompt is sent to the LLM.
 
@@ -250,7 +250,7 @@ class InvalidPromptException(Exception):
 # ========================
 
 
-class DatabaseException(Exception):
+class DatabaseError(Exception):
     """
     Raised when a database error occurs.
 
@@ -262,7 +262,7 @@ class DatabaseException(Exception):
         super().__init__(message)
 
 
-class TransactionRollbackException(DatabaseException):
+class TransactionRollbackError(DatabaseError):
     """
     Raised when a transaction fails and is rolled back.
     """

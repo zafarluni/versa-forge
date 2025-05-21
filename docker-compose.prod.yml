@@ -1,18 +1,22 @@
-# Must be explicitly run via -> docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+version: "3.9"
 services:
   app:
     build:
-      context: .
-      dockerfile: Dockerfile.prod  # Production Dockerfile
-    container_name: versa_forge_api
+      dockerfile: Dockerfile.prod    # Use this if you have a prod-specific Dockerfile; otherwise remove.
     environment:
       - APP_ENV=production
       - DEBUG=False
-    restart: always
+      # Add any other production-specific environment variables/secrets here
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
     ports:
       - "8000:8000"
-    command: ["fastapi", "run", "app/main.py", "--host", "0.0.0.0", "--port", "8000"]
+    # Uncomment the following if you need a healthcheck in prod
+    # healthcheck:
+    #   test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+    #   interval: 30s
+    #   retries: 3
+    #   timeout: 5s
+    # Optionally override depends_on/db in prod if using an external DB
 
-  # db:
-  #   volumes:
-  #     - postgres_data:/var/lib/postgresql/data  # Persistent storage in production
+  # If you use a managed DB in production, you can omit the db service here.
+  # If you do want to run a local db in prod, just leave it as is from base.

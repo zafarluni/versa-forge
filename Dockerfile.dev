@@ -1,68 +1,49 @@
 # ---- Stage 1: Build dependencies ----
 FROM python:3.12-slim-bookworm AS builder
 
-# Create a non-root user for security
 RUN groupadd --system appgroup && useradd --system --no-create-home --group appgroup appuser
 
 WORKDIR /app
 
-# Install system dependencies required for building packages
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential python3-dev libffi-dev git curl \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential python3-dev libffi-dev git curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install `uv` package manager
+# Install uv (consider pinning version for more control)
 RUN curl -fsSL https://astral.sh/uv/install.sh | sh && \
     mv $HOME/.local/bin/uv /usr/local/bin/uv
 
-# Verify `uv` installation
 RUN uv --version
 
-# Copy dependency files first
 COPY pyproject.toml uv.lock ./
 
-# Install Python dependencies using `uv`
-# RUN uv pip install --system --requirements pyproject.toml --no-cache-dir
-RUN uv pip install --system --requirements pyproject.toml --no-cache-dir
-RUN uv pip install --system debugpy --no-cache-dir
+RUN uv pip install --system --requirements pyproject.toml debugpy --no-cache-dir
+# RUN uv sync
+# RUN uv pip install --system debugpy
 
-
-# RUN uv sync --all-groups
 
 # ---- Stage 2: Final image ----
 FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install only necessary runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends libffi-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Create a non-root user for security
 RUN groupadd --system appgroup && useradd --system --no-create-home --group appgroup appuser
 
-# Copy installed dependencies from builder stage
 COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
-# Copy the application source code with correct ownership
 COPY --chown=appuser:appgroup . .
 
-# Switch to non-root user
 USER appuser
 
-# Expose the application port
 EXPOSE 8000
 
-# Debugger-related environment variables
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONWARNINGS="ignore"
 ENV PYDEVD_DISABLE_FILE_VALIDATION=1
 
-
-# Default command for running FastAPI (supports development mode)
-# CMD ["fastapi", "dev", "app/main.py", "--host", "0.0.0.0", "--port", "8000", "--reload"]
-
-# Start the application with uvicorn
-# CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-exclude", "*.log", "--reload-exclude", "*.swp","--reload-exclude", "*.tmp", "--reload-exclude", ".env"]
+# Production: remove --reload!
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

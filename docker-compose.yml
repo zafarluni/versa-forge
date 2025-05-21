@@ -13,25 +13,41 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/db/engines/postgresql/2-create_db.sql:/docker-entrypoint-initdb.d/2-create_db.sql
-      - ./scripts/db/engines/postgresql/3-seed_data.sql:/docker-entrypoint-initdb.d/3-seed_data.sql 
+      - ./scripts/db/engines/postgresql/3-seed_data.sql:/docker-entrypoint-initdb.d/3-seed_data.sql
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER}"]
       interval: 10s
       retries: 5
       timeout: 5s
+    networks:
+      - versa_net
 
   app:
     build:
       context: .
-    container_name: versa_forge_api_dev
-    restart: always
+      dockerfile: Dockerfile
+    image: versa_forge_api:dev 
+    container_name: versa_forge_api
     env_file: .env
     depends_on:
       db:
         condition: service_healthy
     ports:
       - "8000:8000"
+      - "${DEBUG_PORT}:${DEBUG_PORT}"
     environment:
-      - RUNNING_IN_DOCKER=true     
+      - RUNNING_IN_DOCKER=true
+    networks:
+      - versa_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 15s
+      retries: 3
+      timeout: 5s
+
 volumes:
   postgres_data:
+
+networks:
+  versa_net:
+    driver: bridge

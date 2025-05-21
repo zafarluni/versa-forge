@@ -1,55 +1,75 @@
-# # mypy: ignore-errors
-# # ========================
-# # Test Get Category by ID
-# # ========================
+# mypy: ignore-errors
+# ========================
+# Category GET Endpoint Tests
+# ========================
+import pytest
+from fastapi import status
+from httpx import AsyncClient
 
-# def test_get_category_with_invalid_id(client):
-#     """Ensure retrieving a category with a non-integer ID fails validation."""
-#     response = client.get("/categories/abc")  # Non-numeric ID
-#     assert response.status_code == 422
-
-
-# def test_get_category_with_negative_id(client):
-#     """Ensure retrieving a category with a negative ID returns 404."""
-#     response = client.get("/categories/-1")
-#     assert response.status_code == 404
+ENDPOINT = "/categories/"
 
 
-# def test_get_category_with_large_nonexistent_id(client):
-#     """Ensure retrieving a non-existent category returns 404."""
-#     response = client.get("/categories/999999")
-#     assert response.status_code == 404
+@pytest.fixture(autouse=True)
+def override_admin_user():
+    """Force all requests to be from an admin user."""
+    from app.core.auth import get_current_user
+    from app.main import app as fastapi_app
+    from app.schemas.user_schemas import UserResponse
+
+    admin = UserResponse(
+        id=1, username="admin", full_name="Admin User", email="admin@example.com", is_active=True, is_admin=True
+    )
+    fastapi_app.dependency_overrides[get_current_user] = lambda: admin
+    yield
+    fastapi_app.dependency_overrides.clear()
 
 
-# def test_get_existing_category(client):
-#     """Ensure retrieving an existing category returns the correct data."""
-#     create_response = client.post("/categories/", json={"name": "TestCategory"})
-#     category_id = create_response.json()["id"]
-
-#     response = client.get(f"/categories/{category_id}")
-#     assert response.status_code == 200
-
-#     data = response.json()
-#     assert data["id"] == category_id
-#     assert data["name"] == "TestCategory"
-#     assert "description" in data
-#     assert "created_at" in data
+@pytest.mark.asyncio
+async def test_get_category_invalid_id(client: AsyncClient):
+    """Ensure retrieving a category with a non-integer ID fails validation."""
+    resp = await client.get(f"{ENDPOINT}abc")
+    assert resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
 
-# def test_get_deleted_category(client):
-#     """Ensure retrieving a deleted category returns 404."""
-#     create_response = client.post("/categories/", json={"name": "ToDelete"})
-#     category_id = create_response.json()["id"]
-#     client.delete(f"/categories/{category_id}")  # Delete the category
-
-#     response = client.get(f"/categories/{category_id}")
-#     assert response.status_code == 404
+@pytest.mark.asyncio
+async def test_get_category_negative_id(client: AsyncClient):
+    """Ensure retrieving a category with a negative ID returns 404."""
+    resp = await client.get(f"{ENDPOINT}-1")
+    assert resp.status_code == status.HTTP_404_NOT_FOUND
 
 
-# # def test_get_category_raises_exception(client, mocker):
-# #     """Ensure exception handling works when a database failure occurs while retrieving a category."""
-# #     mocker.patch("app.services.categories_service.CategoryService.get_category_by_id", side_effect=Exception("DB Error"))
+@pytest.mark.asyncio
+async def test_get_category_not_found(client: AsyncClient):
+    """Ensure retrieving a non-existent category returns 404."""
+    resp = await client.get(f"{ENDPOINT}999999")
+    assert resp.status_code == status.HTTP_404_NOT_FOUND
+    assert "not found" in resp.json().get("detail", "").lower()
 
-# #     response = client.get("/categories/1")
-# #     assert response.status_code == 500
-# #     assert response.json()["error"]["message"] == "Internal Server Error"
+
+@pytest.mark.asyncio
+async def test_get_existing_category(client: AsyncClient):
+    """Ensure retrieving an existing category returns the correct data."""
+    create_resp = await client.post(ENDPOINT, json={"name": "TestCategory", "description": "Desc"})
+    assert create_resp.status_code == status.HTTP_201_CREATED
+    created = create_resp.json()
+    cat_id = created["id"]
+
+    resp = await client.get(f"{ENDPOINT}{cat_id}")
+    assert resp.status_code == status.HTTP_200_OK
+    data = resp.json()
+    assert data["id"] == cat_id
+    assert data["name"] == "TestCategory"
+    assert "description" in data
+
+
+@pytest.mark.asyncio
+async def test_get_deleted_category(client: AsyncClient):
+    """Ensure retrieving a deleted category returns 404."""
+    create_resp = await client.post(ENDPOINT, json={"name": "ToDelete", "description": ""})
+    assert create_resp.status_code == status.HTTP_201_CREATED
+    cat_id = create_resp.json()["id"]
+    del_resp = await client.delete(f"{ENDPOINT}{cat_id}")
+    assert del_resp.status_code == status.HTTP_204_NO_CONTENT
+
+    resp = await client.get(f"{ENDPOINT}{cat_id}")
+    assert resp.status_code == status.HTTP_404_NOT_FOUND

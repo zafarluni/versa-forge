@@ -33,10 +33,6 @@ pip-delete-this-directory.txt
 .git/
 .gitignore
 
-# Docker-related files
-Dockerfile
-docker-compose.yml
-
 # System files
 .DS_Store
 Thumbs.db
@@ -50,6 +46,13 @@ files/
 tests/__pycache__/
 tests/*.pyc
 
-# Ignore any compiled files
+# Build and dist directories
 dist/
 build/
+
+# Node (if using frontend in same repo)
+node_modules/
+npm-debug.log
+
+# Sample/production env files
+.env.example

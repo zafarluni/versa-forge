@@ -1,35 +1,61 @@
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+import logging
+from typing import AsyncGenerator
+
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.orm import DeclarativeBase
-from app.utils.config import settings
+
+from app.utils.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 
+# ───── Base model ──────────────────────────────────────────────────────────────
 class Base(DeclarativeBase):
-    """Base model class for SQLAlchemy ORM."""
+    """
+    Base class for all ORM models.
+    MappedAsDataclass gives you auto-generated __init__ and __repr__.
+    """
 
     pass
 
 
-# Database URL from settings
-DATABASE_URL = settings.DATABASE_URL
+# ───── Engine & Session Factory ────────────────────────────────────────────────
+settings = get_settings()
+DATABASE_URL = settings.database.url
 
-# Create Engine
-async_engine = create_async_engine(DATABASE_URL, pool_pre_ping=True)
+async_engine: AsyncEngine = create_async_engine(
+    DATABASE_URL,
+    echo=False,  # Set True if you want to see raw SQL logs
+    pool_pre_ping=True,  # Avoid “stale connection” errors
+    future=True,  # Opt into SQLAlchemy 2.0 behavior
+)
 
-# Session Factory
-# SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=async_engine)
-
-# Async Session Factory
 AsyncSessionLocal = async_sessionmaker(
     bind=async_engine,
-    expire_on_commit=False,  # Key parameter for async sessions
+    class_=AsyncSession,  # Produce AsyncSession objects
+    expire_on_commit=False,
     autoflush=False,
 )
 
 
-# Dependency for Async Sessions
-# mypy: ignore-errors
-async def get_db():
-    """Yields an async database session."""
+# ───── Dependency ─────────────────────────────────────────────────────────────
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    """
+    FastAPI dependency that yields an AsyncSession.
+    Commits on success, rolls back on error, and always closes the session.
+    """
     async with AsyncSessionLocal() as session:
-        async with session.begin():
+        try:
             yield session
+            await session.commit()  # commit if no exceptions
+        except Exception as e:
+            await session.rollback()  # rollback on error
+            logger.error(f"Database session error: {e}", exc_info=True)
+            raise
+        finally:
+            await session.close()

@@ -1,103 +1,121 @@
-# Project metadata
+# --------------------------------------------
+# Project Metadata
+# --------------------------------------------
 [project]
 name = "versa-forge"
 version = "0.1.0"
 description = "Custom GPT platform with RAG support and optimized prompts"
 readme = "README.md"
 requires-python = ">=3.12"
+authors = [{ name = "Zafar Hussain Luni", email = "your.email@example.com" }]
+license = "MIT"
+keywords = ["LLM", "RAG", "AI", "FastAPI", "ChatGPT", "Multi-Agent"]
 
-# Project dependencies
+# --------------------------------------------
+# Core Dependencies (Runtime)
+# --------------------------------------------
 dependencies = [
-    "asyncpg>=0.30.0",
-    # Core web framework
+    # Web framework and standard dependencies
     "fastapi[standard]>=0.115.8",
-    # HTTP client for API calls
+    # HTTP client
     "httpx>=0.28.1",
-    "passlib[bcrypt]>=1.7.4",
-    # Environment variable management
+    # Environment settings
     "pydantic-settings>=2.7.1",
-    "pyjwt>=2.10.1",
-    # Environment file handling
-    "python-dotenv>=1.0.1",
-    # ORM for database interactions
+    # ORM (SQLAlchemy 2.x)
     "sqlalchemy>=2.0.38",
+    # Typing support
+    "typing-extensions>=4.11.0",
+    # Password hashing
+    "passlib[bcrypt]>=1.7.4",
+    "pyjwt>=2.10.1",
+    "psycopg[binary]>=3.2.9",
+
 ]
 
-# Development dependencies grouped under "dev"
+# --------------------------------------------
+# Development Dependencies
+# --------------------------------------------
+
 [dependency-groups]
 dev = [
-    # Debugging tools
-    "debugpy>=1.8.12",
     # Testing framework
-    "pytest>=8.3.4",
-    # Testcontainers for database testing
-    "testcontainers>=4.9.1",
-    # HTTP testing for FastAPI
-    "httpx>=0.28.1",
-    # Mocking support for tests
-    "pytest-mock>=3.14.0",
-    # Test coverage reporting
-    "pytest-cov>=5.0.0",
-    # Static type checker
+    "pytest>=8.3.5",
+    "pytest-asyncio>=0.26.0",
+    # Static typing and linting
     "mypy>=1.15.0",
-    # Linter for Python code quality
-    "pylint>=3.3.4",
-    # Security analysis tool
+    "ruff>=0.4.3",
+    # Formatter
+    "black>=24.4.2",
+    # Security analysis
     "bandit>=1.8.3",
-    # Pre-commit hooks manager
+    # Debugging
+    "debugpy>=1.8.12",
+    # Pre-commit hooks
     "pre-commit>=4.1.0",
-    "pytest-asyncio>=0.25.3",
+    # Testcontainers for integration testing
+    "testcontainers[postgres]>=4.10.0",
+    # For Testconitainers bug
+    "psycopg2-binary>=2.9.10",
 ]
 
-# Mypy configuration for strict type checking
+# --------------------------------------------
+# Mypy Configuration (Strict Type Checks)
+# --------------------------------------------
 [tool.mypy]
-strict = true                # Enables all strict checks
-disallow_untyped_defs = true # Forces all functions to have type hints
+strict = true
+disallow_untyped_defs = true
 warn_unused_ignores = true
 warn_return_any = true
 warn_unused_configs = true
 
-# Pylint configuration
-[tool.pylint.main]
-fail-under = 9.0 # Minimum acceptable score before failing (0-10)
-jobs = 0 # Use all available CPU cores for linting
-disable = [
-    "C0114", # Missing module docstring
-    "C0115", # Missing class docstring
-    "C0116", # Missing function docstring
-]
-
-[tool.pylint.format]
-max-line-length = 120 # Set the maximum line length
-
-[tool.pylint.design]
-max-args = 5 # Limit the number of function arguments to 5
-
-[tool.pylint.messages_control]
-disable = [
-    "missing-docstring",      # Ignore missing docstring warnings
-    "too-few-public-methods", # Allow small classes with few public methods
-    "unnecessary-pass",       # Allow unnecessary pass statements
-]
-
-# Bandit security tool configuration
-[tool.bandit]
-exclude_dirs = ["tests", "migrations"] # Exclude test and migration directories
-skips = [
-    "B101", # Ignore assert usage warning
-    "B110", # Ignore try-except-pass warnings
-]
-
-# Pre-commit configuration placeholder
-[tool.pre-commit]
-# Pre-commit hooks need to be configured later
-
-# Pytest configuration
+# --------------------------------------------
+# Pytest Configuration
+# --------------------------------------------
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
-addopts = "-v --disable-warnings" # Enable verbose output and disable warnings
+addopts = "-v --disable-warnings"
 markers = [
     "integration: marks tests as integration tests",
     "e2e: marks tests as end-to-end tests",
+]
+
+# --------------------------------------------
+# Ruff (Faster Alternative/Complement to Pylint)
+# --------------------------------------------
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+select = ["E", "F", "I", "N", "B"]
+ignore = ["E402"]
+
+# --------------------------------------------
+# Bandit Configuration
+# --------------------------------------------
+[tool.bandit]
+exclude_dirs = ["tests", "migrations"]
+skips = [
+    "B101", # Ignore use of assert
+    "B110", # Try/except/pass
+]
+
+# --------------------------------------------
+# Pre-commit Hooks
+# --------------------------------------------
+[tool.pre-commit]
+repos = [
+    { repo = "https://github.com/psf/black", rev = "24.4.2", hooks = [
+        { id = "black" },
+    ] },
+    { repo = "https://github.com/pre-commit/mirrors-mypy", rev = "v1.15.0", hooks = [
+        { id = "mypy" },
+    ] },
+    { repo = "https://github.com/charliermarsh/ruff-pre-commit", rev = "v0.4.3", hooks = [
+        { id = "ruff" },
+    ] },
+    { repo = "https://github.com/pre-commit/pre-commit-hooks", rev = "v4.6.0", hooks = [
+        { id = "end-of-file-fixer" },
+        { id = "trailing-whitespace" },
+        { id = "check-added-large-files" },
+    ] },
 ]
